@@ -1,0 +1,9 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`byte-level snapshots > perps domain separator (mainnet) 1`] = `"0x75e8c1550edccc0e19a57a67db1a3ed3fd35f9e6943cc6f2fbe03fdaf42bfd5a"`;
+
+exports[`byte-level snapshots > scheduleCancel payload hash 1`] = `"0x0dc2700070d2acaa9e0db0a5c897aab50cfed22d4019621e5adb655f9116630a"`;
+
+exports[`byte-level snapshots > spot domain separator (mainnet) 1`] = `"0x7f4b08bc6b5452f0df86b3a598318de19ca8de243d51b12d09eec6d8086ec7cf"`;
+
+exports[`byte-level snapshots > spot scheduleCancel full signature 1`] = `"0x019b48f761a5010ab63ad3f0ea36dc73caee5679bba457c2baf0f771bb45c1187e5fa60455003b18dccb1e7ec0a05ef43203db999b5fdc67198189854159b655a201"`;

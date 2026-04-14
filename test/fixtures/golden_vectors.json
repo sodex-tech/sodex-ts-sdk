@@ -1,0 +1,98 @@
+[
+  {
+    "name": "spot_scheduleCancel",
+    "domain": "spot",
+    "actionName": "scheduleCancel",
+    "payloadJSON": "{\"type\":\"scheduleCancel\",\"params\":{\"accountID\":1001}}",
+    "payloadHash": "0dc2700070d2acaa9e0db0a5c897aab50cfed22d4019621e5adb655f9116630a",
+    "domainSeparator": "7f4b08bc6b5452f0df86b3a598318de19ca8de243d51b12d09eec6d8086ec7cf",
+    "nonce": 1,
+    "digest": "45d4c20c052674e5c126ca540370444753831e1508957e17d518686c98cc177a",
+    "signature": "019b48f761a5010ab63ad3f0ea36dc73caee5679bba457c2baf0f771bb45c1187e5fa60455003b18dccb1e7ec0a05ef43203db999b5fdc67198189854159b655a201",
+    "signerAddress": "0x14791697260E4c9A71f18484C9f997B308e59325"
+  },
+  {
+    "name": "spot_batchNewOrder",
+    "domain": "spot",
+    "actionName": "batchNewOrder",
+    "payloadJSON": "{\"type\":\"batchNewOrder\",\"params\":{\"accountID\":1001,\"orders\":[{\"symbolID\":42,\"clOrdID\":\"order-001\",\"side\":1,\"type\":1,\"timeInForce\":1,\"price\":\"50000\",\"quantity\":\"0.1\"}]}}",
+    "payloadHash": "79266447c6ec27cf89b94aabb305a3024db881fea07ca20fb8f9a741d27fed24",
+    "domainSeparator": "7f4b08bc6b5452f0df86b3a598318de19ca8de243d51b12d09eec6d8086ec7cf",
+    "nonce": 100,
+    "digest": "b57d91076b378652ebe59224ad82e729f3c2efa9790ac30d762bdada62b19cea",
+    "signature": "01641c5ba6f66af45475184ca753c974b6fbd6115407ee22abade94142df21bd451d8c0e61405155a2ded314bae5f7e490723ae6fd0e6816c4c474d1ec88df4d1100",
+    "signerAddress": "0x14791697260E4c9A71f18484C9f997B308e59325"
+  },
+  {
+    "name": "spot_batchCancelOrder",
+    "domain": "spot",
+    "actionName": "batchCancelOrder",
+    "payloadJSON": "{\"type\":\"batchCancelOrder\",\"params\":{\"accountID\":1001,\"cancels\":[{\"symbolID\":42,\"clOrdID\":\"cancel-001\"}]}}",
+    "payloadHash": "0ae3c4eb5be53a2971acd3407c7034d919d34fc42631c504828c9d69ab3af709",
+    "domainSeparator": "7f4b08bc6b5452f0df86b3a598318de19ca8de243d51b12d09eec6d8086ec7cf",
+    "nonce": 200,
+    "digest": "9abc6bc64977d2471fbf7ad75f1d0832121da761e44163aab0dedc76ef2dc1d9",
+    "signature": "0186c36f4c97d17798464137cf54d8d81e1f42ebd630120420fcd2ad183e0fb4d44a8888c40bc172ac7b0d34dc4246d6d17b8b54283982ab43bdc82c250bbf495201",
+    "signerAddress": "0x14791697260E4c9A71f18484C9f997B308e59325"
+  },
+  {
+    "name": "spot_transferAsset",
+    "domain": "spot",
+    "actionName": "transferAsset",
+    "payloadJSON": "{\"type\":\"transferAsset\",\"params\":{\"id\":1,\"fromAccountID\":1001,\"toAccountID\":999,\"coinID\":0,\"amount\":\"100\",\"type\":3}}",
+    "payloadHash": "0fbe2768b86584d9e7ac0a3df6e54b1a6f44b14fa1ef03fe30bbe2c905135499",
+    "domainSeparator": "7f4b08bc6b5452f0df86b3a598318de19ca8de243d51b12d09eec6d8086ec7cf",
+    "nonce": 300,
+    "digest": "b822398841b04569934975b43b9fa1825f1679ca19e1fc8d46772af317150373",
+    "signature": "01c2d07c4ffb72dfcd9e334201563a9bfcc134c8bac5bec115c8ed2a0523c92e661022c73941a934c4b4bef0db774a049ddc0d3d811fda6118e6d27ac78db7f17a00",
+    "signerAddress": "0x14791697260E4c9A71f18484C9f997B308e59325"
+  },
+  {
+    "name": "spot_replaceOrder",
+    "domain": "spot",
+    "actionName": "replaceOrder",
+    "payloadJSON": "{\"type\":\"replaceOrder\",\"params\":{\"accountID\":1001,\"orders\":[{\"symbolID\":42,\"clOrdID\":\"replace-001\",\"price\":\"50100\",\"quantity\":\"0.2\"}]}}",
+    "payloadHash": "5d53d3c1dea5ac61e3d3e46672befd3a4f9915e92fe16f93a9a8178abb9b2ac9",
+    "domainSeparator": "7f4b08bc6b5452f0df86b3a598318de19ca8de243d51b12d09eec6d8086ec7cf",
+    "nonce": 400,
+    "digest": "0091035e6f4225ea13290d8b092a79501cd69804f3e9f99ce0524fe3909d3c26",
+    "signature": "0161c045c0230ced36129a02fe4dd9d60cc3f357d22a6ff4bf41db410f8fb674d1050297f2eb29b6602c4af5552f82578bd5c6bcfaf3fe274fad1e43a52a62c78100",
+    "signerAddress": "0x14791697260E4c9A71f18484C9f997B308e59325"
+  },
+  {
+    "name": "perps_newOrder",
+    "domain": "futures",
+    "actionName": "newOrder",
+    "payloadJSON": "{\"type\":\"newOrder\",\"params\":{\"accountID\":12345,\"symbolID\":1,\"orders\":[{\"clOrdID\":\"my-order-1\",\"modifier\":1,\"side\":1,\"type\":2,\"timeInForce\":3,\"quantity\":\"0.001\",\"reduceOnly\":false,\"positionSide\":1}]}}",
+    "payloadHash": "24d973a9f714c68e80bf214cbd6a39798da4022b17d43719ec6017f19f4685a7",
+    "domainSeparator": "75e8c1550edccc0e19a57a67db1a3ed3fd35f9e6943cc6f2fbe03fdaf42bfd5a",
+    "nonce": 500,
+    "digest": "15f3b14b944a3d7c05e57067c89358d89634224cd37e17531c293321fb219752",
+    "signature": "0194b7896bc26e1f54ba4e9aeadb33a62d6c2a027a0b83658746d1d24acfdc1a1f05b86f3f596fb6ae963297aba2c386b0de137e02143814fb03c07e333c5eda6d00",
+    "signerAddress": "0x14791697260E4c9A71f18484C9f997B308e59325"
+  },
+  {
+    "name": "perps_updateLeverage",
+    "domain": "futures",
+    "actionName": "updateLeverage",
+    "payloadJSON": "{\"type\":\"updateLeverage\",\"params\":{\"accountID\":1001,\"symbolID\":1,\"leverage\":10,\"marginMode\":2}}",
+    "payloadHash": "5116a3a632bf5675abdeca809db76b0d961b8021f5549dc0b303d01a6c5495b2",
+    "domainSeparator": "75e8c1550edccc0e19a57a67db1a3ed3fd35f9e6943cc6f2fbe03fdaf42bfd5a",
+    "nonce": 600,
+    "digest": "ff5cd33a0666ff52365bc2358846b3c2a5d1dcfd1f01cbee81c4aaac03017dca",
+    "signature": "01a1cfd4ae5d95132545ca15e4cec82f2460a7e962e92b2985b9bc2678b976fe676a37c0b81e2b856aa6a96dec6faf202a36ec05c0a43791ac62e62199c96188bd00",
+    "signerAddress": "0x14791697260E4c9A71f18484C9f997B308e59325"
+  },
+  {
+    "name": "perps_updateMargin",
+    "domain": "futures",
+    "actionName": "updateMargin",
+    "payloadJSON": "{\"type\":\"updateMargin\",\"params\":{\"accountID\":1001,\"symbolID\":1,\"amount\":\"-50\"}}",
+    "payloadHash": "5861101e1bbc37d03d5e29073ff29999b9c51e0828191e22b69f8ad4f18d937f",
+    "domainSeparator": "75e8c1550edccc0e19a57a67db1a3ed3fd35f9e6943cc6f2fbe03fdaf42bfd5a",
+    "nonce": 700,
+    "digest": "2ac2cdaea3cb54583ead0febefe5d4154a7c01b2b03e558ecd58bed808a798a4",
+    "signature": "01162cb50c0e56bc14d7151faca2d5cdb390225ea1d5c23ed5a0347195eaddb33a339e9c0d9a468c4a8add16b8a3b52bfb51bac260624242a9f99e37f1ca45356201",
+    "signerAddress": "0x14791697260E4c9A71f18484C9f997B308e59325"
+  }
+]
