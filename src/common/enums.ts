@@ -227,6 +227,10 @@ export type ApiKeyType = "PRIMARY" | "SUBACCOUNT";
 
 const API_KEY_TYPE_CODE: Record<ApiKeyType, number> = { PRIMARY: 1, SUBACCOUNT: 2 };
 export const apiKeyTypeToCode = (v: ApiKeyType): number => API_KEY_TYPE_CODE[v];
+export const apiKeyTypeFromName = (s: string): ApiKeyType => {
+  if (s === "PRIMARY" || s === "SUBACCOUNT") return s;
+  return s as ApiKeyType;
+};
 
 
 export type OrderStatus =

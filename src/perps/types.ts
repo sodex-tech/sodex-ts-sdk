@@ -1,7 +1,6 @@
 import type {
   ExecType,
   MarginMode,
-  OrderModifier,
   OrderSide,
   OrderStatus,
   OrderType,
@@ -126,130 +125,271 @@ export interface PerpsOpenPositions {
   positions: PerpsPosition[];
 }
 
+/**
+ * Perps order as returned by `GET /accounts/{user}/orders` (open orders) and
+ * `GET /accounts/{user}/orders/history`. Wire shape:
+ * sodex-docs/rest-v1/schema.md#perpsorder (a superset of `SpotOrder`).
+ *
+ * Note: `modifier` (NORMAL/STOP/BRACKET/ATTACHED_STOP) is a request-side
+ * concept used when placing orders. The spec's `PerpsOrder` response shape
+ * does not list it, so the SDK does not expose it here. If the server
+ * actually echoes it and a caller needs it, request a spec update and this
+ * interface will grow an `modifier?: OrderModifier` field.
+ */
 export interface PerpsOrder {
-  symbol: string;
-  symbolId: bigint;
-  accountId: bigint;
   orderID: bigint;
-  clOrdID: string;
+  symbol: string;
   side: OrderSide;
   type: OrderType;
-  timeInForce: TimeInForce;
-  modifier: OrderModifier;
+  status: OrderStatus;
   positionSide: PositionSide;
   reduceOnly: boolean;
-  price: string;
-  quantity: string;
   executedQty: string;
-  cumQuoteQty: string;
-  status: OrderStatus;
+  /** Cumulative executed quote quantity (wire `executedValue`). */
+  executedValue: string;
+  /** Margin frozen by this order (wire `marginFrozen`). */
+  marginFrozen: string;
+  clOrdID?: string;
+  timeInForce?: TimeInForce;
+  price?: string;
+  /** Original order quantity (wire `origQty`). */
+  origQty?: string;
+  /** Original funds (wire `funds`). */
+  funds?: string;
+  createdAt?: bigint;
+  updatedAt?: bigint;
   stopPrice?: string;
   stopType?: StopType;
   triggerType?: TriggerType;
-  createTime: bigint;
-  updateTime: bigint;
+  /** Position ID this order is attached to (for position TP/SL). */
+  positionID?: bigint;
+  /** Primary order ID this stop is attached to (for attached stops). */
+  primaryOrderID?: bigint;
+  /** Order IDs of stops attached to this order (TP/SL). */
+  attachedOrderIDs?: bigint[];
 }
 
+/**
+ * Historical funding payment. Wire shape:
+ * sodex-docs/rest-v1/schema.md#perpsuserfunding.
+ */
 export interface FundingPayment {
   symbol: string;
-  positionId: bigint;
+  /** Position ID (wire `positionID`). Aligned with REST `PerpsOrder.positionID`. */
+  positionID: bigint;
   positionSide: PositionSide;
+  /** Funding fee; negative means received. */
   fundingFee: string;
   feeCoin: string;
+  /** Funding time in milliseconds. */
   timestamp: bigint;
 }
 
 export type PerpsExecType = ExecType;
 
+/**
+ * One coin's balance in a perps account. Wire shape:
+ * sodex-docs/rest-v1/schema.md#perpsbalance
+ * (`{id, coin, total, marginRatio, price?}`).
+ *
+ * Perps balances do not carry a `locked` field — locked margin is tracked
+ * via the account-wide frozen margin totals on `PerpsAccountSnapshot`, not
+ * per coin. Previous SDK versions exposed `available`/`locked` here; both
+ * were invented and have been removed.
+ */
 export interface PerpsAccountBalance {
+  /** Coin ID (wire `id`). Renamed for call-site clarity. */
   coinId: bigint;
   coin: string;
-  available: string;
-  locked: string;
+  /** Wallet balance. */
   total: string;
+  /** Margin ratio of this coin. */
+  marginRatio: string;
+  /** Oracle price of this coin in USD. Optional per spec. */
+  price?: string;
 }
 
+/**
+ * Response of `GET /accounts/{user}/balances`. Wire shape:
+ * sodex-docs/rest-v1/schema.md#perpsaccountbalance
+ * (`{blockTime, blockHeight, balances[]}`).
+ */
 export interface PerpsAccountBalances {
-  accountId: bigint;
+  blockTime: bigint;
+  blockHeight: bigint;
   balances: PerpsAccountBalance[];
 }
 
+/**
+ * Frontend-state snapshot returned by `GET /accounts/{user}/state`. Wire
+ * shape: sodex-docs/rest-v1/schema.md#wsperpsstate.
+ *
+ * Short wire keys are renamed for call-site clarity (derivation); nullable
+ * wire fields are surfaced as TS optionals (wire `null` → SDK `undefined`),
+ * matching the REST-side convention used by `PerpsOrder` et al.
+ */
 export interface PerpsAccountSnapshot {
+  /** User EVM address (wire `user`). */
   userAddress: string;
+  /** Account ID (wire `aid`). */
   accountId: bigint;
+  /** User ID (wire `uid`). */
   userId: bigint;
+  /** Cross account value (wire `av`). */
   accountValue: string;
+  /** Available margin for cross positions (wire `am`). */
   availableMargin: string;
+  /** Available margin for isolated positions (wire `ami`). */
   availableMarginIsolated: string;
+  /** Available margin for transfer (wire `amw`). */
   availableMarginForTransfer: string;
+  /** Isolated frozen margin for positions (wire `im`). */
   isolatedFrozenMargin: string;
+  /** Cross frozen margin for positions (wire `cm`). */
   crossFrozenMargin: string;
+  /** Isolated frozen margin for open orders (wire `oim`). */
   openIsolatedFrozenMargin: string;
+  /** Cross frozen margin for open orders (wire `ocm`). */
   openCrossFrozenMargin: string;
+  /** Balances (wire `B`). */
   balances: PerpsSnapshotBalance[];
+  /** Latest up-to-100 open orders (wire `O`). */
   openOrders: PerpsSnapshotOrder[];
+  /** Open positions (wire `P`). */
   openPositions: PerpsSnapshotPosition[];
+  /** Touched symbol configs (wire `S`). */
   symbolConfigs: PerpsSnapshotSymbolConfig[];
 }
 
+/**
+ * One balance inside a perps snapshot. Wire shape:
+ * sodex-docs/rest-v1/schema.md#wsperpsbalancedetailed
+ * (`WsPerpsBalance` + `{iw, aw, ww, wm, am}`).
+ */
 export interface PerpsSnapshotBalance {
+  /** Coin ID (wire `i`). */
   coinId: bigint;
+  /** Coin name (wire `a`). */
   coin: string;
+  /** Wallet balance (wire `wb`). */
   walletBalance: string;
+  /** Margin ratio of this coin (wire `mr`, percentage). */
   marginRatio: string;
+  /** Oracle price of this coin in USD (wire `px`). */
   oraclePrice: string;
-  isolatedFrozen: string | null;
+  /** Available wallet balance for margin (wire `aw`). */
   availableForMargin: string;
+  /** Available wallet balance for withdrawal (wire `ww`). */
   availableForWithdraw: string;
+  /** Wallet balance corresponding margin (wire `wm`). */
   walletMargin: string;
+  /** Available wallet balance corresponding margin (wire `am`). */
   availableMargin: string;
+  /** Isolated frozen margin for position or open orders (wire `iw`, only for vUSDC). */
+  isolatedFrozen?: string;
 }
 
+/**
+ * One open order inside a perps snapshot. Wire shape:
+ * sodex-docs/rest-v1/schema.md#wsperpsorder — a superset of `WsSpotOrder`
+ * with perps-specific `{ps, R, sp, st, tt, pid, poid, aoids}` additions.
+ *
+ * Field names unified with REST `PerpsOrder` (`origQty`, `executedValue`,
+ * `marginFrozen`, `positionID`, `primaryOrderID`, `attachedOrderIDs`).
+ */
 export interface PerpsSnapshotOrder {
-  symbol: string;
-  clOrdID: string;
+  /** Order ID (wire `i`). */
   orderID: bigint;
+  /** Symbol (wire `s`). */
+  symbol: string;
+  /** Client order ID (wire `c`). */
+  clOrdID: string;
+  /** Side (wire `S`). */
   side: OrderSide;
+  /** Order type (wire `o`). */
   type: OrderType;
+  /** Time in force (wire `f`). */
   timeInForce: TimeInForce;
-  price: string;
-  quantity: string;
-  funds: string | null;
+  /** Current status (wire `X`). */
   status: OrderStatus;
+  /** Price (wire `p`). */
+  price: string;
+  /** Original order quantity (wire `q`). */
+  origQty: string;
+  /** Cumulative filled quantity (wire `z`). */
   executedQty: string;
-  executedQuote: string;
-  marginLocked: string;
+  /** Cumulative filled value (wire `v`). */
+  executedValue: string;
+  /** Margin locked by this order (wire `M`). */
+  marginFrozen: string;
+  /** Position side (wire `ps`). */
   positionSide: PositionSide;
+  /** Reduce-only flag (wire `R`). */
   reduceOnly: boolean;
-  stopPrice: string | null;
-  stopType: StopType | null;
-  triggerType: TriggerType | null;
-  positionId: bigint | null;
-  primaryOrderId: bigint | null;
-  attachedOrderIds: bigint[] | null;
+  /** Original funds (wire `F`). Nullable on the wire; SDK uses undefined. */
+  funds?: string;
+  /** Stop price (wire `sp`). */
+  stopPrice?: string;
+  /** Stop type (wire `st`). */
+  stopType?: StopType;
+  /** Trigger type (wire `tt`). */
+  triggerType?: TriggerType;
+  /** Position ID this order is attached to (wire `pid`). */
+  positionID?: bigint;
+  /** Primary order ID this stop is attached to (wire `poid`). */
+  primaryOrderID?: bigint;
+  /** Order IDs of stops attached to this order (wire `aoids`). */
+  attachedOrderIDs?: bigint[];
 }
 
+/**
+ * One open position inside a perps snapshot. Wire shape:
+ * sodex-docs/rest-v1/schema.md#wsperpsposition.
+ */
 export interface PerpsSnapshotPosition {
+  /** Position ID (wire `i`). */
   id: bigint;
+  /** Symbol (wire `s`). */
   symbol: string;
+  /** Margin mode (wire `m`). */
   marginMode: MarginMode;
+  /** Position side (wire `ps`). */
   positionSide: PositionSide;
+  /** Position size (wire `sz`). */
   size: string;
-  isolatedMargin: string | null;
+  /** Average entry price (wire `ep`). */
   avgEntryPrice: string;
+  /** Cumulative open cost (wire `co`). */
   cumOpenCost: string;
+  /** Cumulative trading fee (wire `cf`). */
   cumTradingFee: string;
+  /** Total closed size during the position lifetime (wire `cc`). */
   cumClosedSize: string;
+  /** Average close price (wire `cp`). */
   avgClosePrice: string;
+  /** Max position size during the position lifetime (wire `ms`). */
   maxSize: string;
+  /** Realized P&L including fees and liquidation loss (wire `cr`). */
   realizedPnL: string;
+  /** Unrealized P&L (wire `ur`). */
   unrealizedPnL: string;
+  /** Position leverage (wire `l`). */
   leverage: number;
+  /** Liquidation price (wire `lp`). */
   liquidationPrice: string;
+  /** Isolated margin (wire `iw`). Nullable on the wire for cross positions; SDK uses undefined. */
+  isolatedMargin?: string;
 }
 
+/**
+ * Per-symbol leverage/margin config touched by the account. Wire shape:
+ * sodex-docs/rest-v1/schema.md#wsperpssymbolconfig (`{s, l, m}`).
+ */
 export interface PerpsSnapshotSymbolConfig {
+  /** Symbol (wire `s`). */
   symbol: string;
+  /** Leverage (wire `l`). */
   leverage: number;
+  /** Margin mode (wire `m`). */
   marginMode: MarginMode;
 }

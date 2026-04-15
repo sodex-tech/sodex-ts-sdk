@@ -57,6 +57,7 @@ export type {
   BookTicker,
   FeeRate,
   Kline,
+  KlineInterval,
   MiniTicker,
   OrderBook,
   PlaceOrderReceipt,
@@ -64,6 +65,7 @@ export type {
   TransferReceipt,
   UserTrade,
 } from "./common/types";
+export { klineIntervalMs, parseKline } from "./common/types";
 export type {
   ReplaceOrderInput,
   ReplaceOrderItem,

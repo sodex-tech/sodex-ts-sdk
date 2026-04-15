@@ -1,5 +1,14 @@
 import type { OrderSide, OrderStatus, OrderType, SymbolStatus, TimeInForce } from "../common/enums";
 
+/**
+ * Spot symbol metadata. Wire shape:
+ * sodex-docs/rest-v1/schema.md#spotsymbol.
+ *
+ * `baseCoin`, `baseCoinPrecision`, `quoteCoin`, `quoteCoinPrecision` are
+ * spec-optional (the server may elide them when the coin-denorm is not
+ * required for the caller). They are exposed as `?` so consumers can tell
+ * "server did not report" from an explicit value.
+ */
 export interface SpotSymbolInfo {
   id: bigint;
   /** Wire name, e.g. `"vBTC_vUSDC"`. */
@@ -7,11 +16,7 @@ export interface SpotSymbolInfo {
   /** Display name, e.g. `"BTC/USDC"`. */
   displayName: string;
   baseCoinId: bigint;
-  baseCoin: string;
-  baseCoinPrecision: number;
   quoteCoinId: bigint;
-  quoteCoin: string;
-  quoteCoinPrecision: number;
   pricePrecision: number;
   tickSize: string;
   minPrice: string;
@@ -30,6 +35,10 @@ export interface SpotSymbolInfo {
   makerFee: string;
   takerFee: string;
   status: SymbolStatus;
+  baseCoin?: string;
+  baseCoinPrecision?: number;
+  quoteCoin?: string;
+  quoteCoinPrecision?: number;
 }
 
 export interface SpotCoinInfo {
@@ -58,64 +67,127 @@ export interface SpotTicker {
   closeTime: bigint;
 }
 
+/**
+ * One coin's balance in a spot account. Wire shape:
+ * sodex-docs/rest-v1/schema.md#spotbalance (`{id, coin, total, locked}`).
+ */
 export interface SpotAccountBalance {
+  /** Coin ID (wire `id`). Renamed for call-site clarity. */
   coinId: bigint;
   coin: string;
-  available: string;
-  locked: string;
+  /** Total balance including locked. */
   total: string;
+  /** Locked balance in open orders. */
+  locked: string;
 }
 
+/**
+ * Response of `GET /accounts/{user}/balances`. Wire shape:
+ * sodex-docs/rest-v1/schema.md#spotaccountbalances
+ * (`{blockTime, blockHeight, balances[]}`).
+ */
 export interface SpotAccountBalances {
-  accountId: bigint;
+  blockTime: bigint;
+  blockHeight: bigint;
   balances: SpotAccountBalance[];
 }
 
+/**
+ * Spot order as returned by `GET /accounts/{user}/orders` (open orders) and
+ * `GET /accounts/{user}/orders/history`. Wire shape:
+ * sodex-docs/rest-v1/schema.md#spotorder.
+ */
 export interface SpotOrder {
-  symbol: string;
-  symbolId: bigint;
-  accountId: bigint;
   orderID: bigint;
-  clOrdID: string;
+  symbol: string;
   side: OrderSide;
   type: OrderType;
-  timeInForce: TimeInForce;
-  price: string;
-  quantity: string;
-  executedQty: string;
-  cumQuoteQty: string;
   status: OrderStatus;
-  createTime: bigint;
-  updateTime: bigint;
+  executedQty: string;
+  /** Cumulative executed quote quantity (wire `executedValue`). */
+  executedValue: string;
+  /** Margin frozen by this order (wire `marginFrozen`). */
+  marginFrozen: string;
+  clOrdID?: string;
+  timeInForce?: TimeInForce;
+  price?: string;
+  /** Original order quantity (wire `origQty`). Absent for funds-denominated orders. */
+  origQty?: string;
+  /** Original funds (wire `funds`). Absent for quantity-denominated orders. */
+  funds?: string;
+  createdAt?: bigint;
+  updatedAt?: bigint;
 }
 
+/**
+ * Frontend-state snapshot returned by `GET /accounts/{user}/state`. Wire
+ * shape: sodex-docs/rest-v1/schema.md#wsspotstate (`{user, aid, uid, B, O}`).
+ *
+ * Fields are renamed from the single-letter wire keys for call-site clarity;
+ * this is pure derivation (no value invention).
+ */
 export interface SpotAccountSnapshot {
+  /** User EVM address (wire `user`). */
   userAddress: string;
+  /** Account ID (wire `aid`). */
   accountId: bigint;
+  /** User ID (wire `uid`). */
   userId: bigint;
+  /** Balances (wire `B`). */
   balances: SpotSnapshotBalance[];
+  /** Latest up-to-100 open orders (wire `O`). */
   openOrders: SpotSnapshotOrder[];
 }
 
+/**
+ * One balance entry inside a spot snapshot. Wire shape:
+ * sodex-docs/rest-v1/schema.md#wsspotbalance (`{i, a, t, l}`).
+ */
 export interface SpotSnapshotBalance {
+  /** Coin ID (wire `i`). */
   coinId: bigint;
+  /** Coin name (wire `a`). */
   coin: string;
+  /** Wallet balance including locked (wire `t`). */
   total: string;
+  /** Locked balance in open orders (wire `l`). */
   locked: string;
 }
 
+/**
+ * One open order inside a spot snapshot. Wire shape:
+ * sodex-docs/rest-v1/schema.md#wsspotorder
+ * (`{s, c, i, S, o, f, p, q, F, X, z, v, M}`).
+ *
+ * Field names are unified with REST `SpotOrder` (`origQty`, `executedValue`,
+ * `marginFrozen`) so call-site code that switches between the two endpoints
+ * reads the same property names.
+ */
 export interface SpotSnapshotOrder {
-  symbol: string;
-  clOrdID: string;
+  /** Order ID (wire `i`). */
   orderID: bigint;
+  /** Symbol (wire `s`). */
+  symbol: string;
+  /** Client order ID (wire `c`). */
+  clOrdID: string;
+  /** Side (wire `S`). */
   side: OrderSide;
+  /** Order type (wire `o`). */
   type: OrderType;
+  /** Time in force (wire `f`). */
   timeInForce: TimeInForce;
-  price: string;
-  quantity: string;
-  funds: string | null;
+  /** Current status (wire `X`). */
   status: OrderStatus;
+  /** Price (wire `p`). */
+  price: string;
+  /** Original order quantity (wire `q`). */
+  origQty: string;
+  /** Cumulative filled quantity (wire `z`). */
   executedQty: string;
-  executedQuote: string;
-  marginLocked: string;
+  /** Cumulative filled value (wire `v`). */
+  executedValue: string;
+  /** Margin locked by this order (wire `M`). */
+  marginFrozen: string;
+  /** Original funds (wire `F`). `null` on the wire collapses to `undefined` for SDK style consistency. */
+  funds?: string;
 }

@@ -12,7 +12,6 @@ import {
   type ApiKeyType,
   apiKeyTypeToCode,
   marginModeFromName,
-  orderModifierFromName,
   orderSideFromName,
   orderStatusFromName,
   orderTypeFromName,
@@ -32,6 +31,7 @@ import {
   type BookTicker,
   type FeeRate,
   type Kline,
+  type KlineInterval,
   type MiniTicker,
   type OrderBook,
   type PlaceOrderReceipt,
@@ -43,8 +43,19 @@ import {
   parseBatchCancelReceipt,
   parseBatchOrderReceipt as parseBatchReceipt,
   parseBatchReplaceReceipt,
+  parseBookTicker,
   parseFeeRate,
+  parseKline,
+  parseMiniTicker,
+  parseOrderBook,
+  parseTrade,
   parseUserTrade,
+  optBigInt,
+  optBigIntArray,
+  optEnum,
+  optString,
+  requireBoolean,
+  requireWireField,
 } from "../common/types";
 import { CoinRegistry } from "../registry/coin-registry";
 import { type SymbolRef, SymbolRegistry } from "../registry/symbol-registry";
@@ -160,21 +171,21 @@ export class PerpsClient {
 
   async getOrderBook(symbol: SymbolRef, limit?: number): Promise<OrderBook> {
     const name = await this.resolveWireName(symbol);
-    const raw = await this.http.get<any>(`/markets/${encodeURIComponent(name)}/orderbook`, {
+    const raw = await this.http.get<WireRecord>(`/markets/${encodeURIComponent(name)}/orderbook`, {
       query: { limit },
     });
-    return parseOrderBook(raw);
+    return parseOrderBook(raw, { symbol: name });
   }
 
   async getKlines(
     symbol: SymbolRef,
-    params: { interval: string; startTime?: bigint; endTime?: bigint; limit?: number },
+    params: { interval: KlineInterval; startTime?: bigint; endTime?: bigint; limit?: number },
   ): Promise<Kline[]> {
     const name = await this.resolveWireName(symbol);
     const raw = await this.http.get<WireRecord[]>(`/markets/${encodeURIComponent(name)}/klines`, {
       query: { ...params },
     });
-    return raw.map(parseKline);
+    return raw.map((r) => parseKline(r, { symbol: name, interval: params.interval }));
   }
 
   async getRecentTrades(symbol: SymbolRef, limit?: number): Promise<Trade[]> {
@@ -197,11 +208,17 @@ export class PerpsClient {
     userAddress: string,
     params: { symbol?: string; accountId?: bigint } = {},
   ): Promise<PerpsOrder[]> {
-    const raw = await this.http.get<any>(`/accounts/${userAddress}/orders`, {
+    // Wire: `PerpsAccountOpenOrder` envelope `{blockTime, blockHeight, orders}`
+    // per sodex-docs/rest-v1/schema.md#perpsaccountopenorder. We surface only
+    // the `orders` list for now; block metadata is intentionally dropped.
+    const raw = await this.http.get<WireRecord>(`/accounts/${userAddress}/orders`, {
       query: { symbol: params.symbol, accountID: params.accountId },
     });
-    const list = Array.isArray(raw) ? raw : Array.isArray(raw?.orders) ? raw.orders : [];
-    return list.map(parsePerpsOrder);
+    requireWireField(raw, "getOpenOrders", "orders");
+    if (!Array.isArray(raw.orders)) {
+      throw new Error("getOpenOrders: wire field `orders` must be an array");
+    }
+    return raw.orders.map(parsePerpsOrder);
   }
 
   async getOpenPositions(
@@ -436,7 +453,8 @@ export class PerpsClient {
     const { coin, ...rest } = input;
     const coinId = typeof coin === "bigint" ? coin : this.coins.resolveId(coin);
     const payload = buildTransferAssetPayload({ ...rest, coinId });
-    const raw = await this.signedPost<any>("/accounts/transfers", payload);
+    const raw = await this.signedPost<WireRecord>("/accounts/transfers", payload);
+    requireWireField(raw, "transferAsset", "id");
     return { id: BigInt(raw.id) };
   }
 
@@ -542,340 +560,565 @@ export class PerpsClient {
 }
 
 
-function parsePerpsSymbol(raw: WireRecord): PerpsSymbolInfo {
+/**
+ * Parse `PerpsSymbol` from wire (sodex-docs/rest-v1/schema.md#perpssymbol).
+ * 30 required fields + 2 optional (`openInterestCap`, `openInterestCapUSD`).
+ */
+export function parsePerpsSymbol(raw: WireRecord): PerpsSymbolInfo {
+  for (const key of [
+    "id",
+    "name",
+    "displayName",
+    "baseCoin",
+    "quoteCoinID",
+    "quoteCoin",
+    "quoteCoinPrecision",
+    "pricePrecision",
+    "tickSize",
+    "minPrice",
+    "maxPrice",
+    "quantityPrecision",
+    "stepSize",
+    "minQuantity",
+    "maxQuantity",
+    "marketMinQuantity",
+    "marketMaxQuantity",
+    "minNotional",
+    "maxNotional",
+    "buyLimitUpRatio",
+    "sellLimitDownRatio",
+    "marketDeviationRatio",
+    "maxLeverage",
+    "initLeverage",
+    "marginTiers",
+    "fundingInterval",
+    "interestRate",
+    "maxFundingRate",
+    "minFundingRate",
+    "makerFee",
+    "takerFee",
+    "status",
+  ] as const) {
+    requireWireField(raw, "parsePerpsSymbol", key);
+  }
+  if (!Array.isArray(raw.marginTiers)) {
+    throw new Error("parsePerpsSymbol: wire field `marginTiers` must be an array");
+  }
   return {
     id: BigInt(raw.id),
-    name: raw.name,
-    displayName: raw.displayName ?? raw.name,
-    baseCoin: raw.baseCoin ?? "",
+    name: String(raw.name),
+    displayName: String(raw.displayName),
+    baseCoin: String(raw.baseCoin),
     quoteCoinId: BigInt(raw.quoteCoinID),
-    quoteCoin: raw.quoteCoin ?? "",
-    quoteCoinPrecision: raw.quoteCoinPrecision ?? 0,
-    pricePrecision: raw.pricePrecision,
-    tickSize: raw.tickSize,
-    minPrice: raw.minPrice,
-    maxPrice: raw.maxPrice,
-    quantityPrecision: raw.quantityPrecision,
-    openInterestCap: raw.openInterestCap,
-    openInterestCapUSD: raw.openInterestCapUSD,
-    stepSize: raw.stepSize,
-    minQuantity: raw.minQuantity,
-    maxQuantity: raw.maxQuantity,
-    marketMinQuantity: raw.marketMinQuantity,
-    marketMaxQuantity: raw.marketMaxQuantity,
-    minNotional: raw.minNotional,
-    maxNotional: raw.maxNotional,
-    buyLimitUpRatio: raw.buyLimitUpRatio,
-    sellLimitDownRatio: raw.sellLimitDownRatio,
-    marketDeviationRatio: raw.marketDeviationRatio,
-    maxLeverage: raw.maxLeverage ?? 0,
-    initLeverage: raw.initLeverage ?? 0,
-    marginTiers: Array.isArray(raw.marginTiers)
-      ? raw.marginTiers.map((t: WireRecord) => ({
-          maxNotionalValue: t.maxNotionalValue,
-          maintenanceMarginRate: t.maintenanceMarginRate,
-          maxLeverage: t.maxLeverage,
-          maintenanceDeduction: t.maintenanceDeduction,
-        }))
-      : [],
-    fundingInterval: raw.fundingInterval ?? 0,
-    interestRate: raw.interestRate ?? "",
-    maxFundingRate: raw.maxFundingRate ?? "",
-    minFundingRate: raw.minFundingRate ?? "",
-    makerFee: raw.makerFee,
-    takerFee: raw.takerFee,
+    quoteCoin: String(raw.quoteCoin),
+    quoteCoinPrecision: Number(raw.quoteCoinPrecision),
+    pricePrecision: Number(raw.pricePrecision),
+    tickSize: String(raw.tickSize),
+    minPrice: String(raw.minPrice),
+    maxPrice: String(raw.maxPrice),
+    quantityPrecision: Number(raw.quantityPrecision),
+    stepSize: String(raw.stepSize),
+    minQuantity: String(raw.minQuantity),
+    maxQuantity: String(raw.maxQuantity),
+    marketMinQuantity: String(raw.marketMinQuantity),
+    marketMaxQuantity: String(raw.marketMaxQuantity),
+    minNotional: String(raw.minNotional),
+    maxNotional: String(raw.maxNotional),
+    buyLimitUpRatio: String(raw.buyLimitUpRatio),
+    sellLimitDownRatio: String(raw.sellLimitDownRatio),
+    marketDeviationRatio: String(raw.marketDeviationRatio),
+    maxLeverage: Number(raw.maxLeverage),
+    initLeverage: Number(raw.initLeverage),
+    marginTiers: raw.marginTiers.map(parseMarginTier),
+    fundingInterval: Number(raw.fundingInterval),
+    interestRate: String(raw.interestRate),
+    maxFundingRate: String(raw.maxFundingRate),
+    minFundingRate: String(raw.minFundingRate),
+    makerFee: String(raw.makerFee),
+    takerFee: String(raw.takerFee),
     status: symbolStatusFromName(raw.status),
+    openInterestCap: optString(raw, "openInterestCap"),
+    openInterestCapUSD: optString(raw, "openInterestCapUSD"),
   };
 }
 
-function parsePerpsCoin(raw: WireRecord): PerpsCoinInfo {
+/**
+ * Parse `MarginTier` from wire
+ * (sodex-docs/rest-v1/schema.md#margintier). All 4 fields required.
+ */
+function parseMarginTier(t: WireRecord) {
+  requireWireField(t, "parseMarginTier", "maxNotionalValue");
+  requireWireField(t, "parseMarginTier", "maintenanceMarginRate");
+  requireWireField(t, "parseMarginTier", "maxLeverage");
+  requireWireField(t, "parseMarginTier", "maintenanceDeduction");
+  return {
+    maxNotionalValue: String(t.maxNotionalValue),
+    maintenanceMarginRate: String(t.maintenanceMarginRate),
+    maxLeverage: Number(t.maxLeverage),
+    maintenanceDeduction: String(t.maintenanceDeduction),
+  };
+}
+
+/**
+ * Parse `PerpsCoin` from wire (sodex-docs/rest-v1/schema.md#perpscoin).
+ * 4 required + 1 optional (`price`).
+ */
+export function parsePerpsCoin(raw: WireRecord): PerpsCoinInfo {
+  requireWireField(raw, "parsePerpsCoin", "id");
+  requireWireField(raw, "parsePerpsCoin", "name");
+  requireWireField(raw, "parsePerpsCoin", "precision");
+  requireWireField(raw, "parsePerpsCoin", "marginRatio");
   return {
     id: BigInt(raw.id),
-    name: raw.name,
-    precision: raw.precision ?? 0,
-    marginRatio: raw.marginRatio ?? "",
-    price: raw.price,
+    name: String(raw.name),
+    precision: Number(raw.precision),
+    marginRatio: String(raw.marginRatio),
+    price: optString(raw, "price"),
   };
 }
 
-function parsePerpsTicker(raw: WireRecord): PerpsTicker {
+/**
+ * Parse `PerpsTicker` from wire (sodex-docs/rest-v1/schema.md#perpsticker).
+ * 18 required + 4 optional (`lastSz`, `vwap`, `change`, `changePct`).
+ */
+export function parsePerpsTicker(raw: WireRecord): PerpsTicker {
+  for (const key of [
+    "symbol",
+    "lastPx",
+    "openPx",
+    "highPx",
+    "lowPx",
+    "volume",
+    "quoteVolume",
+    "bidPx",
+    "bidSz",
+    "askPx",
+    "askSz",
+    "fundingRate",
+    "nextFundingTime",
+    "indexPrice",
+    "markPrice",
+    "openInterest",
+    "openTime",
+    "closeTime",
+  ] as const) {
+    requireWireField(raw, "parsePerpsTicker", key);
+  }
+  const changePct = raw.changePct;
   return {
-    symbol: raw.symbol,
-    lastPx: raw.lastPx,
-    lastSz: raw.lastSz,
-    vwap: raw.vwap,
-    change: raw.change,
-    changePct: raw.changePct,
-    openPx: raw.openPx,
-    highPx: raw.highPx,
-    lowPx: raw.lowPx,
-    volume: raw.volume,
-    quoteVolume: raw.quoteVolume,
-    bidPx: raw.bidPx,
-    bidSz: raw.bidSz,
-    askPx: raw.askPx,
-    askSz: raw.askSz,
-    fundingRate: raw.fundingRate,
+    symbol: String(raw.symbol),
+    lastPx: String(raw.lastPx),
+    openPx: String(raw.openPx),
+    highPx: String(raw.highPx),
+    lowPx: String(raw.lowPx),
+    volume: String(raw.volume),
+    quoteVolume: String(raw.quoteVolume),
+    bidPx: String(raw.bidPx),
+    bidSz: String(raw.bidSz),
+    askPx: String(raw.askPx),
+    askSz: String(raw.askSz),
+    fundingRate: String(raw.fundingRate),
     nextFundingTime: BigInt(raw.nextFundingTime),
-    indexPrice: raw.indexPrice,
-    markPrice: raw.markPrice,
-    openInterest: raw.openInterest,
+    indexPrice: String(raw.indexPrice),
+    markPrice: String(raw.markPrice),
+    openInterest: String(raw.openInterest),
     openTime: BigInt(raw.openTime),
     closeTime: BigInt(raw.closeTime),
+    lastSz: optString(raw, "lastSz"),
+    vwap: optString(raw, "vwap"),
+    change: optString(raw, "change"),
+    changePct:
+      changePct === undefined || changePct === null ? undefined : Number(changePct),
   };
 }
 
-function parseMiniTicker(raw: WireRecord): MiniTicker {
+/**
+ * Parse `MarkPriceTicker` from wire
+ * (sodex-docs/rest-v1/schema.md#markpriceticker). All 6 fields required.
+ */
+export function parseMarkPrice(raw: WireRecord): MarkPriceTicker {
+  for (const key of [
+    "symbol",
+    "fundingRate",
+    "nextFundingTime",
+    "indexPrice",
+    "markPrice",
+    "openInterest",
+  ] as const) {
+    requireWireField(raw, "parseMarkPrice", key);
+  }
   return {
-    symbol: raw.symbol,
-    lastPx: raw.lastPx,
-    openPx: raw.openPx,
-    highPx: raw.highPx,
-    lowPx: raw.lowPx,
-    volume: raw.volume,
-    quoteVolume: raw.quoteVolume,
-    openTime: BigInt(raw.openTime),
-    closeTime: BigInt(raw.closeTime),
-  };
-}
-
-function parseMarkPrice(raw: WireRecord): MarkPriceTicker {
-  return {
-    symbol: raw.symbol,
-    fundingRate: raw.fundingRate,
+    symbol: String(raw.symbol),
+    fundingRate: String(raw.fundingRate),
     nextFundingTime: BigInt(raw.nextFundingTime),
-    indexPrice: raw.indexPrice,
-    markPrice: raw.markPrice,
-    openInterest: raw.openInterest,
+    indexPrice: String(raw.indexPrice),
+    markPrice: String(raw.markPrice),
+    openInterest: String(raw.openInterest),
   };
 }
 
-function parseBookTicker(raw: WireRecord): BookTicker {
+/**
+ * Parse `PerpsAccountBalance` (the response envelope) from wire
+ * (sodex-docs/rest-v1/schema.md#perpsaccountbalance): `{blockTime,
+ * blockHeight, balances[]}`, inner shape `{id, coin, total, marginRatio,
+ * price?}`. All fields required except `price`.
+ */
+export function parsePerpsBalances(raw: WireRecord): PerpsAccountBalances {
+  requireWireField(raw, "parsePerpsBalances", "blockTime");
+  requireWireField(raw, "parsePerpsBalances", "blockHeight");
+  requireWireField(raw, "parsePerpsBalances", "balances");
+  if (!Array.isArray(raw.balances)) {
+    throw new Error("parsePerpsBalances: wire field `balances` must be an array");
+  }
   return {
-    symbol: raw.symbol,
-    bidPx: raw.bidPx,
-    bidSz: raw.bidSz,
-    askPx: raw.askPx,
-    askSz: raw.askSz,
+    blockTime: BigInt(raw.blockTime),
+    blockHeight: BigInt(raw.blockHeight),
+    balances: raw.balances.map((b: WireRecord): PerpsAccountBalance => {
+      requireWireField(b, "parsePerpsBalances.balance", "id");
+      requireWireField(b, "parsePerpsBalances.balance", "coin");
+      requireWireField(b, "parsePerpsBalances.balance", "total");
+      requireWireField(b, "parsePerpsBalances.balance", "marginRatio");
+      return {
+        coinId: BigInt(b.id),
+        coin: String(b.coin),
+        total: String(b.total),
+        marginRatio: String(b.marginRatio),
+        price: optString(b, "price"),
+      };
+    }),
   };
 }
 
-function parseOrderBook(raw: WireRecord): OrderBook {
-  const levelMap = (l: WireRecord) => ({ price: l[0] ?? l.price, size: l[1] ?? l.size });
+/**
+ * Parse `WsPerpsState` from wire (sodex-docs/rest-v1/schema.md#wsperpsstate).
+ * All 15 envelope fields required; short wire keys renamed for call-site
+ * clarity (derivation, not invention).
+ */
+export function parsePerpsAccountSnapshot(raw: WireRecord): PerpsAccountSnapshot {
+  for (const key of [
+    "user",
+    "aid",
+    "uid",
+    "av",
+    "am",
+    "ami",
+    "amw",
+    "im",
+    "cm",
+    "oim",
+    "ocm",
+    "B",
+    "O",
+    "P",
+    "S",
+  ] as const) {
+    requireWireField(raw, "parsePerpsAccountSnapshot", key);
+  }
+  for (const [key, arr] of [
+    ["B", raw.B],
+    ["O", raw.O],
+    ["P", raw.P],
+    ["S", raw.S],
+  ] as const) {
+    if (!Array.isArray(arr)) {
+      throw new Error(
+        `parsePerpsAccountSnapshot: wire field \`${key}\` must be an array`,
+      );
+    }
+  }
   return {
-    symbol: raw.symbol ?? "",
-    lastUpdateID: BigInt(raw.lastUpdateID ?? raw.lastUpdateId ?? 0),
-    bids: Array.isArray(raw.bids) ? raw.bids.map(levelMap) : [],
-    asks: Array.isArray(raw.asks) ? raw.asks.map(levelMap) : [],
+    userAddress: String(raw.user),
+    accountId: BigInt(raw.aid),
+    userId: BigInt(raw.uid),
+    accountValue: String(raw.av),
+    availableMargin: String(raw.am),
+    availableMarginIsolated: String(raw.ami),
+    availableMarginForTransfer: String(raw.amw),
+    isolatedFrozenMargin: String(raw.im),
+    crossFrozenMargin: String(raw.cm),
+    openIsolatedFrozenMargin: String(raw.oim),
+    openCrossFrozenMargin: String(raw.ocm),
+    balances: raw.B.map(parsePerpsSnapshotBalance),
+    openOrders: raw.O.map(parsePerpsSnapshotOrder),
+    openPositions: raw.P.map(parsePerpsSnapshotPosition),
+    symbolConfigs: raw.S.map(parsePerpsSnapshotSymbolConfig),
   };
 }
 
-function parseKline(raw: WireRecord): Kline {
+/**
+ * Parse `WsPerpsBalanceDetailed` from wire
+ * (sodex-docs/rest-v1/schema.md#wsperpsbalancedetailed).
+ * Required: `{i, a, wb, mr, px, aw, ww, wm, am}`; nullable-required: `iw`
+ * (wire `null` → SDK `undefined`).
+ */
+export function parsePerpsSnapshotBalance(b: WireRecord): PerpsSnapshotBalance {
+  for (const key of ["i", "a", "wb", "mr", "px", "aw", "ww", "wm", "am"] as const) {
+    requireWireField(b, "parsePerpsSnapshotBalance", key);
+  }
   return {
-    symbol: raw.symbol ?? raw.s ?? "",
-    interval: raw.interval ?? "",
-    openTime: BigInt(raw.openTime ?? raw.startTime ?? raw.t ?? 0),
-    closeTime: BigInt(raw.closeTime ?? raw.endTime ?? 0),
-    openPx: raw.openPx ?? raw.open ?? raw.o ?? "",
-    highPx: raw.highPx ?? raw.high ?? raw.h ?? "",
-    lowPx: raw.lowPx ?? raw.low ?? raw.l ?? "",
-    closePx: raw.closePx ?? raw.close ?? raw.c ?? "",
-    volume: raw.volume ?? raw.a ?? raw.v ?? "",
-    quoteVolume: raw.quoteVolume ?? raw.q ?? raw.v ?? "",
-    tradeCount: raw.tradeCount ?? raw.trades ?? 0,
+    coinId: BigInt(b.i),
+    coin: String(b.a),
+    walletBalance: String(b.wb),
+    marginRatio: String(b.mr),
+    oraclePrice: String(b.px),
+    availableForMargin: String(b.aw),
+    availableForWithdraw: String(b.ww),
+    walletMargin: String(b.wm),
+    availableMargin: String(b.am),
+    isolatedFrozen: optString(b, "iw"),
   };
 }
 
-function parseTrade(raw: WireRecord): Trade {
+/**
+ * Parse `WsPerpsOrder` from wire (sodex-docs/rest-v1/schema.md#wsperpsorder).
+ * Required scalars: spot-base plus `{ps, R}`. Nullable-required (wire `null`
+ * → SDK `undefined`): `{F, sp, st, tt, pid, poid, aoids}`.
+ */
+export function parsePerpsSnapshotOrder(o: WireRecord): PerpsSnapshotOrder {
+  for (const key of [
+    "s",
+    "c",
+    "i",
+    "S",
+    "o",
+    "f",
+    "p",
+    "q",
+    "X",
+    "z",
+    "v",
+    "M",
+    "ps",
+    "R",
+  ] as const) {
+    requireWireField(o, "parsePerpsSnapshotOrder", key);
+  }
   return {
-    symbol: raw.symbol ?? "",
-    id: BigInt(raw.id ?? raw.tradeID ?? 0),
-    price: raw.price,
-    quantity: raw.quantity ?? raw.qty ?? "",
-    quoteQuantity: raw.quoteQuantity ?? raw.quoteQty ?? "",
-    time: BigInt(raw.time ?? raw.timestamp ?? 0),
-    isBuyerMaker: raw.isBuyerMaker,
-  };
-}
-
-function parsePerpsBalances(raw: WireRecord): PerpsAccountBalances {
-  const list = Array.isArray(raw) ? raw : Array.isArray(raw?.balances) ? raw.balances : [];
-  return {
-    accountId: BigInt(raw.accountID ?? raw.accountId ?? 0),
-    balances: list.map(
-      (b: WireRecord): PerpsAccountBalance => ({
-        coinId: BigInt(b.coinID ?? b.coinId ?? 0),
-        coin: b.coin ?? "",
-        available: b.available ?? "0",
-        locked: b.locked ?? "0",
-        total: b.total ?? b.balance ?? "0",
-      }),
-    ),
-  };
-}
-
-function parsePerpsAccountSnapshot(raw: WireRecord): PerpsAccountSnapshot {
-  return {
-    userAddress: raw.user ?? "",
-    accountId: BigInt(raw.aid ?? 0),
-    userId: BigInt(raw.uid ?? 0),
-    accountValue: raw.av ?? "0",
-    availableMargin: raw.am ?? "0",
-    availableMarginIsolated: raw.ami ?? "0",
-    availableMarginForTransfer: raw.amw ?? "0",
-    isolatedFrozenMargin: raw.im ?? "0",
-    crossFrozenMargin: raw.cm ?? "0",
-    openIsolatedFrozenMargin: raw.oim ?? "0",
-    openCrossFrozenMargin: raw.ocm ?? "0",
-    balances: Array.isArray(raw.B) ? raw.B.map(parsePerpsSnapshotBalance) : [],
-    openOrders: Array.isArray(raw.O) ? raw.O.map(parsePerpsSnapshotOrder) : [],
-    openPositions: Array.isArray(raw.P) ? raw.P.map(parsePerpsSnapshotPosition) : [],
-    symbolConfigs: Array.isArray(raw.S) ? raw.S.map(parsePerpsSnapshotSymbolConfig) : [],
-  };
-}
-
-function parsePerpsSnapshotBalance(b: WireRecord): PerpsSnapshotBalance {
-  return {
-    coinId: BigInt(b.i ?? 0),
-    coin: b.a ?? "",
-    walletBalance: b.wb ?? "0",
-    marginRatio: b.mr ?? "0",
-    oraclePrice: b.px ?? "0",
-    isolatedFrozen: b.iw === null ? null : (b.iw ?? "0"),
-    availableForMargin: b.aw ?? "0",
-    availableForWithdraw: b.ww ?? "0",
-    walletMargin: b.wm ?? "0",
-    availableMargin: b.am ?? "0",
-  };
-}
-
-function parsePerpsSnapshotOrder(o: WireRecord): PerpsSnapshotOrder {
-  const bigIntArray = (v: any): bigint[] | null =>
-    v === null || v === undefined ? null : (v as any[]).map((x) => BigInt(x));
-  return {
-    symbol: o.s ?? "",
-    clOrdID: o.c ?? "",
-    orderID: BigInt(o.i ?? 0),
+    orderID: BigInt(o.i),
+    symbol: String(o.s),
+    clOrdID: String(o.c),
     side: orderSideFromName(o.S),
     type: orderTypeFromName(o.o),
     timeInForce: timeInForceFromName(o.f),
-    price: o.p ?? "0",
-    quantity: o.q ?? "0",
-    funds: o.F === null ? null : (o.F ?? "0"),
     status: orderStatusFromName(o.X),
-    executedQty: o.z ?? "0",
-    executedQuote: o.v ?? "0",
-    marginLocked: o.M ?? "0",
-    positionSide: positionSideFromName(o.ps ?? "BOTH"),
-    reduceOnly: o.R,
-    stopPrice: o.sp === null ? null : (o.sp ?? "0"),
-    stopType: o.st ? stopTypeFromName(o.st) : null,
-    triggerType: o.tt ? triggerTypeFromName(o.tt) : null,
-    positionId: o.pid === null || o.pid === undefined ? null : BigInt(o.pid),
-    primaryOrderId: o.poid === null || o.poid === undefined ? null : BigInt(o.poid),
-    attachedOrderIds: bigIntArray(o.aoids),
+    price: String(o.p),
+    origQty: String(o.q),
+    executedQty: String(o.z),
+    executedValue: String(o.v),
+    marginFrozen: String(o.M),
+    positionSide: positionSideFromName(o.ps),
+    reduceOnly: requireBoolean(o, "parsePerpsSnapshotOrder", "R"),
+    funds: optString(o, "F"),
+    stopPrice: optString(o, "sp"),
+    stopType: optEnum(o, "st", stopTypeFromName),
+    triggerType: optEnum(o, "tt", triggerTypeFromName),
+    positionID: optBigInt(o, "pid"),
+    primaryOrderID: optBigInt(o, "poid"),
+    attachedOrderIDs: optBigIntArray(o, "parsePerpsSnapshotOrder", "aoids"),
   };
 }
 
-function parsePerpsSnapshotPosition(p: WireRecord): PerpsSnapshotPosition {
+/**
+ * Parse `WsPerpsPosition` from wire
+ * (sodex-docs/rest-v1/schema.md#wsperpsposition). Required:
+ * `{i, s, m, ps, sz, ep, co, cf, cc, cp, ms, cr, ur, l, lp}`;
+ * nullable-required: `iw`.
+ */
+export function parsePerpsSnapshotPosition(p: WireRecord): PerpsSnapshotPosition {
+  for (const key of [
+    "i",
+    "s",
+    "m",
+    "ps",
+    "sz",
+    "ep",
+    "co",
+    "cf",
+    "cc",
+    "cp",
+    "ms",
+    "cr",
+    "ur",
+    "l",
+    "lp",
+  ] as const) {
+    requireWireField(p, "parsePerpsSnapshotPosition", key);
+  }
   return {
-    id: BigInt(p.i ?? 0),
-    symbol: p.s ?? "",
+    id: BigInt(p.i),
+    symbol: String(p.s),
     marginMode: marginModeFromName(p.m),
     positionSide: positionSideFromName(p.ps),
-    size: p.sz ?? "0",
-    isolatedMargin: p.iw === null ? null : (p.iw ?? "0"),
-    avgEntryPrice: p.ep ?? "0",
-    cumOpenCost: p.co ?? "0",
-    cumTradingFee: p.cf ?? "0",
-    cumClosedSize: p.cc ?? "0",
-    avgClosePrice: p.cp ?? "0",
-    maxSize: p.ms ?? "0",
-    realizedPnL: p.cr ?? "0",
-    unrealizedPnL: p.ur ?? "0",
-    leverage: p.l ?? 0,
-    liquidationPrice: p.lp ?? "0",
+    size: String(p.sz),
+    avgEntryPrice: String(p.ep),
+    cumOpenCost: String(p.co),
+    cumTradingFee: String(p.cf),
+    cumClosedSize: String(p.cc),
+    avgClosePrice: String(p.cp),
+    maxSize: String(p.ms),
+    realizedPnL: String(p.cr),
+    unrealizedPnL: String(p.ur),
+    leverage: Number(p.l),
+    liquidationPrice: String(p.lp),
+    isolatedMargin: optString(p, "iw"),
   };
 }
 
-function parsePerpsSnapshotSymbolConfig(s: WireRecord): PerpsSnapshotSymbolConfig {
+/**
+ * Parse `WsPerpsSymbolConfig` from wire
+ * (sodex-docs/rest-v1/schema.md#wsperpssymbolconfig). All 3 fields required.
+ */
+export function parsePerpsSnapshotSymbolConfig(
+  s: WireRecord,
+): PerpsSnapshotSymbolConfig {
+  requireWireField(s, "parsePerpsSnapshotSymbolConfig", "s");
+  requireWireField(s, "parsePerpsSnapshotSymbolConfig", "l");
+  requireWireField(s, "parsePerpsSnapshotSymbolConfig", "m");
   return {
-    symbol: s.s ?? "",
-    leverage: s.l ?? 0,
+    symbol: String(s.s),
+    leverage: Number(s.l),
     marginMode: marginModeFromName(s.m),
   };
 }
 
-function parsePerpsOpenPositions(raw: WireRecord): PerpsOpenPositions {
-  const positions = Array.isArray(raw)
-    ? raw
-    : Array.isArray(raw?.positions)
-      ? raw.positions
-      : [];
+/**
+ * Parse `PerpsAccountOpenPosition` from wire
+ * (sodex-docs/rest-v1/schema.md#perpsaccountopenposition).
+ * `{blockTime, blockHeight, positions}` — all 3 required.
+ */
+export function parsePerpsOpenPositions(raw: WireRecord): PerpsOpenPositions {
+  requireWireField(raw, "parsePerpsOpenPositions", "blockTime");
+  requireWireField(raw, "parsePerpsOpenPositions", "blockHeight");
+  requireWireField(raw, "parsePerpsOpenPositions", "positions");
+  if (!Array.isArray(raw.positions)) {
+    throw new Error("parsePerpsOpenPositions: wire field `positions` must be an array");
+  }
   return {
-    blockTime: BigInt(raw.blockTime ?? 0),
-    blockHeight: BigInt(raw.blockHeight ?? 0),
-    positions: positions.map(parsePerpsPosition),
+    blockTime: BigInt(raw.blockTime),
+    blockHeight: BigInt(raw.blockHeight),
+    positions: raw.positions.map(parsePerpsPosition),
   };
 }
 
-function parsePerpsPosition(raw: WireRecord): PerpsPosition {
+/**
+ * Parse `Position` from wire (sodex-docs/rest-v1/schema.md#position). All 19
+ * fields are required; the dead `realizedPnl` camelCase alias is gone
+ * (docs confirm only `realizedPnL` is emitted).
+ */
+export function parsePerpsPosition(raw: WireRecord): PerpsPosition {
+  requireWireField(raw, "parsePerpsPosition", "id");
+  requireWireField(raw, "parsePerpsPosition", "symbol");
+  requireWireField(raw, "parsePerpsPosition", "marginMode");
+  requireWireField(raw, "parsePerpsPosition", "side");
+  requireWireField(raw, "parsePerpsPosition", "size");
+  requireWireField(raw, "parsePerpsPosition", "initialMargin");
+  requireWireField(raw, "parsePerpsPosition", "avgEntryPrice");
+  requireWireField(raw, "parsePerpsPosition", "cumOpenCost");
+  requireWireField(raw, "parsePerpsPosition", "cumTradingFee");
+  requireWireField(raw, "parsePerpsPosition", "cumClosedSize");
+  requireWireField(raw, "parsePerpsPosition", "avgClosePrice");
+  requireWireField(raw, "parsePerpsPosition", "maxSize");
+  requireWireField(raw, "parsePerpsPosition", "realizedPnL");
+  requireWireField(raw, "parsePerpsPosition", "leverage");
+  requireWireField(raw, "parsePerpsPosition", "active");
+  requireWireField(raw, "parsePerpsPosition", "isTakenOver");
+  requireWireField(raw, "parsePerpsPosition", "takeOverPrice");
+  requireWireField(raw, "parsePerpsPosition", "createdAt");
+  requireWireField(raw, "parsePerpsPosition", "updatedAt");
   return {
-    id: BigInt(raw.id ?? 0),
-    symbol: raw.symbol ?? "",
+    id: BigInt(raw.id),
+    symbol: String(raw.symbol),
     marginMode: marginModeFromName(raw.marginMode),
     side: positionSideFromName(raw.side),
-    size: raw.size ?? "0",
-    initialMargin: raw.initialMargin ?? "0",
-    avgEntryPrice: raw.avgEntryPrice ?? "0",
-    cumOpenCost: raw.cumOpenCost ?? "0",
-    cumTradingFee: raw.cumTradingFee ?? "0",
-    cumClosedSize: raw.cumClosedSize ?? "0",
-    avgClosePrice: raw.avgClosePrice ?? "0",
-    maxSize: raw.maxSize ?? "0",
-    realizedPnL: raw.realizedPnL ?? raw.realizedPnl ?? "0",
-    leverage: raw.leverage ?? 0,
-    active: raw.active,
-    isTakenOver: raw.isTakenOver,
-    takeOverPrice: raw.takeOverPrice ?? "0",
-    createdAt: BigInt(raw.createdAt ?? 0),
-    updatedAt: BigInt(raw.updatedAt ?? 0),
+    size: String(raw.size),
+    initialMargin: String(raw.initialMargin),
+    avgEntryPrice: String(raw.avgEntryPrice),
+    cumOpenCost: String(raw.cumOpenCost),
+    cumTradingFee: String(raw.cumTradingFee),
+    cumClosedSize: String(raw.cumClosedSize),
+    avgClosePrice: String(raw.avgClosePrice),
+    maxSize: String(raw.maxSize),
+    realizedPnL: String(raw.realizedPnL),
+    leverage: Number(raw.leverage),
+    active: requireBoolean(raw, "parsePerpsPosition", "active"),
+    isTakenOver: requireBoolean(raw, "parsePerpsPosition", "isTakenOver"),
+    takeOverPrice: String(raw.takeOverPrice),
+    createdAt: BigInt(raw.createdAt),
+    updatedAt: BigInt(raw.updatedAt),
   };
 }
 
-function parsePerpsOrder(raw: WireRecord): PerpsOrder {
+/**
+ * Parse `PerpsOrder` from wire (sodex-docs/rest-v1/schema.md#perpsorder).
+ * Required: orderID, symbol, side, type, status, positionSide, reduceOnly,
+ * executedQty, executedValue, marginFrozen. Optional fields return
+ * `undefined` when the server omits them.
+ */
+export function parsePerpsOrder(raw: WireRecord): PerpsOrder {
+  requireWireField(raw, "parsePerpsOrder", "orderID");
+  requireWireField(raw, "parsePerpsOrder", "symbol");
+  requireWireField(raw, "parsePerpsOrder", "side");
+  requireWireField(raw, "parsePerpsOrder", "type");
+  requireWireField(raw, "parsePerpsOrder", "status");
+  requireWireField(raw, "parsePerpsOrder", "positionSide");
+  requireWireField(raw, "parsePerpsOrder", "reduceOnly");
+  requireWireField(raw, "parsePerpsOrder", "executedQty");
+  requireWireField(raw, "parsePerpsOrder", "executedValue");
+  requireWireField(raw, "parsePerpsOrder", "marginFrozen");
+  const tif = raw.timeInForce;
+  const st = raw.stopType;
+  const tt = raw.triggerType;
   return {
-    symbol: raw.symbol ?? "",
-    symbolId: BigInt(raw.symbolID ?? raw.symbolId ?? 0),
-    accountId: BigInt(raw.accountID ?? raw.accountId ?? 0),
-    orderID: BigInt(raw.orderID ?? 0),
-    clOrdID: raw.clOrdID ?? "",
+    orderID: BigInt(raw.orderID),
+    symbol: String(raw.symbol),
     side: orderSideFromName(raw.side),
     type: orderTypeFromName(raw.type),
-    timeInForce: timeInForceFromName(raw.timeInForce),
-    modifier: orderModifierFromName(raw.modifier ?? "NORMAL"),
-    positionSide: positionSideFromName(raw.positionSide ?? "BOTH"),
-    reduceOnly: raw.reduceOnly,
-    price: raw.price ?? "0",
-    quantity: raw.quantity ?? "0",
-    executedQty: raw.executedQty ?? "0",
-    cumQuoteQty: raw.cumQuoteQty ?? "0",
     status: orderStatusFromName(raw.status),
-    stopPrice: raw.stopPrice,
-    stopType: raw.stopType ? stopTypeFromName(raw.stopType) : undefined,
-    triggerType: raw.triggerType ? triggerTypeFromName(raw.triggerType) : undefined,
-    createTime: BigInt(raw.createTime ?? 0),
-    updateTime: BigInt(raw.updateTime ?? 0),
+    positionSide: positionSideFromName(raw.positionSide),
+    reduceOnly: requireBoolean(raw, "parsePerpsOrder", "reduceOnly"),
+    executedQty: String(raw.executedQty),
+    executedValue: String(raw.executedValue),
+    marginFrozen: String(raw.marginFrozen),
+    clOrdID: optString(raw, "clOrdID"),
+    timeInForce:
+      tif === undefined || tif === null ? undefined : timeInForceFromName(tif),
+    price: optString(raw, "price"),
+    origQty: optString(raw, "origQty"),
+    funds: optString(raw, "funds"),
+    createdAt: optBigInt(raw, "createdAt"),
+    updatedAt: optBigInt(raw, "updatedAt"),
+    stopPrice: optString(raw, "stopPrice"),
+    stopType:
+      st === undefined || st === null ? undefined : stopTypeFromName(st),
+    triggerType:
+      tt === undefined || tt === null ? undefined : triggerTypeFromName(tt),
+    positionID: optBigInt(raw, "positionID"),
+    primaryOrderID: optBigInt(raw, "primaryOrderID"),
+    attachedOrderIDs: optBigIntArray(raw, "parsePerpsOrder", "attachedOrderIDs"),
   };
 }
 
-function parseFunding(raw: WireRecord): FundingPayment {
+/**
+ * Parse `PerpsUserFunding` from wire
+ * (sodex-docs/rest-v1/schema.md#perpsuserfunding). All 6 fields required.
+ */
+export function parseFunding(raw: WireRecord): FundingPayment {
+  for (const key of [
+    "symbol",
+    "positionID",
+    "positionSide",
+    "fundingFee",
+    "feeCoin",
+    "timestamp",
+  ] as const) {
+    requireWireField(raw, "parseFunding", key);
+  }
   return {
-    symbol: raw.symbol ?? "",
-    positionId: BigInt(raw.positionID ?? raw.positionId ?? 0),
-    positionSide: positionSideFromName(raw.positionSide ?? "BOTH"),
-    fundingFee: raw.fundingFee ?? "0",
-    feeCoin: raw.feeCoin ?? "",
-    timestamp: BigInt(raw.timestamp ?? raw.time ?? 0),
+    symbol: String(raw.symbol),
+    positionID: BigInt(raw.positionID),
+    positionSide: positionSideFromName(raw.positionSide),
+    fundingFee: String(raw.fundingFee),
+    feeCoin: String(raw.feeCoin),
+    timestamp: BigInt(raw.timestamp),
   };
 }

@@ -27,6 +27,7 @@ import {
   type BookTicker,
   type FeeRate,
   type Kline,
+  type KlineInterval,
   type MiniTicker,
   type OrderBook,
   type PlaceOrderReceipt,
@@ -38,8 +39,16 @@ import {
   parseBatchCancelReceipt,
   parseBatchOrderReceipt as parseBatchReceipt,
   parseBatchReplaceReceipt,
+  parseBookTicker,
   parseFeeRate,
+  parseKline,
+  parseMiniTicker,
+  parseOrderBook,
+  parseTrade,
   parseUserTrade,
+  optBigInt,
+  optString,
+  requireWireField,
 } from "../common/types";
 import { CoinRegistry } from "../registry/coin-registry";
 import { type SymbolRef, SymbolRegistry } from "../registry/symbol-registry";
@@ -157,21 +166,21 @@ export class SpotClient {
 
   async getOrderBook(symbol: SymbolRef, limit?: number): Promise<OrderBook> {
     const name = await this.resolveWireName(symbol);
-    const raw = await this.http.get<any>(`/markets/${encodeURIComponent(name)}/orderbook`, {
+    const raw = await this.http.get<WireRecord>(`/markets/${encodeURIComponent(name)}/orderbook`, {
       query: { limit },
     });
-    return parseOrderBook(raw);
+    return parseOrderBook(raw, { symbol: name });
   }
 
   async getKlines(
     symbol: SymbolRef,
-    params: { interval: string; startTime?: bigint; endTime?: bigint; limit?: number },
+    params: { interval: KlineInterval; startTime?: bigint; endTime?: bigint; limit?: number },
   ): Promise<Kline[]> {
     const name = await this.resolveWireName(symbol);
     const raw = await this.http.get<WireRecord[]>(`/markets/${encodeURIComponent(name)}/klines`, {
       query: { ...params },
     });
-    return raw.map(parseKline);
+    return raw.map((r) => parseKline(r, { symbol: name, interval: params.interval }));
   }
 
   async getRecentTrades(symbol: SymbolRef, limit?: number): Promise<Trade[]> {
@@ -194,14 +203,20 @@ export class SpotClient {
     userAddress: string,
     params: { symbol?: string; accountId?: bigint } = {},
   ): Promise<SpotOrder[]> {
-    const raw = await this.http.get<any>(`/accounts/${userAddress}/orders`, {
+    // Wire: `SpotAccountOpenOrder` envelope `{blockTime, blockHeight, orders}`
+    // per sodex-docs/rest-v1/schema.md#spotaccountopenorder. We surface only
+    // the `orders` list for now; block metadata is intentionally dropped.
+    const raw = await this.http.get<WireRecord>(`/accounts/${userAddress}/orders`, {
       query: {
         symbol: await this.normalizeSymbolFilter(params.symbol),
         accountID: params.accountId,
       },
     });
-    const list = Array.isArray(raw) ? raw : Array.isArray(raw?.orders) ? raw.orders : [];
-    return list.map(parseSpotOrder);
+    requireWireField(raw, "getOpenOrders", "orders");
+    if (!Array.isArray(raw.orders)) {
+      throw new Error("getOpenOrders: wire field `orders` must be an array");
+    }
+    return raw.orders.map(parseSpotOrder);
   }
 
   async getAccountState(userAddress: string, accountId?: bigint): Promise<SpotAccountSnapshot> {
@@ -369,7 +384,8 @@ export class SpotClient {
     const { coin, ...rest } = input;
     const coinId = typeof coin === "bigint" ? coin : this.coins.resolveId(coin);
     const payload = buildTransferAssetPayload({ ...rest, coinId });
-    const raw = await this.signedPost<any>("/accounts/transfers", payload);
+    const raw = await this.signedPost<WireRecord>("/accounts/transfers", payload);
+    requireWireField(raw, "transferAsset", "id");
     return { id: BigInt(raw.id) };
   }
 
@@ -486,198 +502,277 @@ export class SpotClient {
 }
 
 
-function parseSpotSymbol(raw: WireRecord): SpotSymbolInfo {
+/**
+ * Parse `SpotSymbol` from wire (sodex-docs/rest-v1/schema.md#spotsymbol).
+ * 22 required fields (strict) + 4 optional coin-denormalization fields
+ * (`baseCoin`, `baseCoinPrecision`, `quoteCoin`, `quoteCoinPrecision`).
+ */
+export function parseSpotSymbol(raw: WireRecord): SpotSymbolInfo {
+  for (const key of [
+    "id",
+    "name",
+    "displayName",
+    "baseCoinID",
+    "quoteCoinID",
+    "pricePrecision",
+    "tickSize",
+    "minPrice",
+    "maxPrice",
+    "quantityPrecision",
+    "stepSize",
+    "minQuantity",
+    "maxQuantity",
+    "marketMinQuantity",
+    "marketMaxQuantity",
+    "minNotional",
+    "maxNotional",
+    "buyLimitUpRatio",
+    "sellLimitDownRatio",
+    "marketDeviationRatio",
+    "makerFee",
+    "takerFee",
+    "status",
+  ] as const) {
+    requireWireField(raw, "parseSpotSymbol", key);
+  }
   return {
     id: BigInt(raw.id),
-    name: raw.name,
-    displayName: raw.displayName ?? raw.name,
+    name: String(raw.name),
+    displayName: String(raw.displayName),
     baseCoinId: BigInt(raw.baseCoinID),
-    baseCoin: raw.baseCoin ?? "",
-    baseCoinPrecision: raw.baseCoinPrecision ?? 0,
     quoteCoinId: BigInt(raw.quoteCoinID),
-    quoteCoin: raw.quoteCoin ?? "",
-    quoteCoinPrecision: raw.quoteCoinPrecision ?? 0,
-    pricePrecision: raw.pricePrecision,
-    tickSize: raw.tickSize,
-    minPrice: raw.minPrice,
-    maxPrice: raw.maxPrice,
-    quantityPrecision: raw.quantityPrecision,
-    stepSize: raw.stepSize,
-    minQuantity: raw.minQuantity,
-    maxQuantity: raw.maxQuantity,
-    marketMinQuantity: raw.marketMinQuantity,
-    marketMaxQuantity: raw.marketMaxQuantity,
-    minNotional: raw.minNotional,
-    maxNotional: raw.maxNotional,
-    buyLimitUpRatio: raw.buyLimitUpRatio,
-    sellLimitDownRatio: raw.sellLimitDownRatio,
-    marketDeviationRatio: raw.marketDeviationRatio,
-    makerFee: raw.makerFee,
-    takerFee: raw.takerFee,
+    pricePrecision: Number(raw.pricePrecision),
+    tickSize: String(raw.tickSize),
+    minPrice: String(raw.minPrice),
+    maxPrice: String(raw.maxPrice),
+    quantityPrecision: Number(raw.quantityPrecision),
+    stepSize: String(raw.stepSize),
+    minQuantity: String(raw.minQuantity),
+    maxQuantity: String(raw.maxQuantity),
+    marketMinQuantity: String(raw.marketMinQuantity),
+    marketMaxQuantity: String(raw.marketMaxQuantity),
+    minNotional: String(raw.minNotional),
+    maxNotional: String(raw.maxNotional),
+    buyLimitUpRatio: String(raw.buyLimitUpRatio),
+    sellLimitDownRatio: String(raw.sellLimitDownRatio),
+    marketDeviationRatio: String(raw.marketDeviationRatio),
+    makerFee: String(raw.makerFee),
+    takerFee: String(raw.takerFee),
     status: symbolStatusFromName(raw.status),
+    baseCoin: optString(raw, "baseCoin"),
+    baseCoinPrecision:
+      raw.baseCoinPrecision === undefined || raw.baseCoinPrecision === null
+        ? undefined
+        : Number(raw.baseCoinPrecision),
+    quoteCoin: optString(raw, "quoteCoin"),
+    quoteCoinPrecision:
+      raw.quoteCoinPrecision === undefined || raw.quoteCoinPrecision === null
+        ? undefined
+        : Number(raw.quoteCoinPrecision),
   };
 }
 
-function parseSpotCoin(raw: WireRecord): SpotCoinInfo {
+/**
+ * Parse `SpotCoin` from wire (sodex-docs/rest-v1/schema.md#spotcoin).
+ * All 3 fields required.
+ */
+export function parseSpotCoin(raw: WireRecord): SpotCoinInfo {
+  requireWireField(raw, "parseSpotCoin", "id");
+  requireWireField(raw, "parseSpotCoin", "name");
+  requireWireField(raw, "parseSpotCoin", "precision");
   return {
     id: BigInt(raw.id),
-    name: raw.name,
-    precision: raw.precision ?? 0,
+    name: String(raw.name),
+    precision: Number(raw.precision),
   };
 }
 
-function parseSpotTicker(raw: WireRecord): SpotTicker {
+/**
+ * Parse `SpotTicker` from wire (sodex-docs/rest-v1/schema.md#spotticker).
+ * 16 required + 2 optional (`lastSz`, `vwap`).
+ */
+export function parseSpotTicker(raw: WireRecord): SpotTicker {
+  for (const key of [
+    "symbol",
+    "lastPx",
+    "openPx",
+    "highPx",
+    "lowPx",
+    "change",
+    "changePct",
+    "volume",
+    "quoteVolume",
+    "bidPx",
+    "bidSz",
+    "askPx",
+    "askSz",
+    "openTime",
+    "closeTime",
+  ] as const) {
+    requireWireField(raw, "parseSpotTicker", key);
+  }
   return {
-    symbol: raw.symbol,
-    lastPx: raw.lastPx,
-    lastSz: raw.lastSz,
-    openPx: raw.openPx,
-    highPx: raw.highPx,
-    lowPx: raw.lowPx,
-    vwap: raw.vwap,
-    change: raw.change,
-    changePct: raw.changePct,
-    volume: raw.volume,
-    quoteVolume: raw.quoteVolume,
-    bidPx: raw.bidPx,
-    bidSz: raw.bidSz,
-    askPx: raw.askPx,
-    askSz: raw.askSz,
+    symbol: String(raw.symbol),
+    lastPx: String(raw.lastPx),
+    openPx: String(raw.openPx),
+    highPx: String(raw.highPx),
+    lowPx: String(raw.lowPx),
+    change: String(raw.change),
+    changePct: Number(raw.changePct),
+    volume: String(raw.volume),
+    quoteVolume: String(raw.quoteVolume),
+    bidPx: String(raw.bidPx),
+    bidSz: String(raw.bidSz),
+    askPx: String(raw.askPx),
+    askSz: String(raw.askSz),
     openTime: BigInt(raw.openTime),
     closeTime: BigInt(raw.closeTime),
+    lastSz: optString(raw, "lastSz"),
+    vwap: optString(raw, "vwap"),
   };
 }
 
-function parseMiniTicker(raw: WireRecord): MiniTicker {
+/**
+ * Parse `SpotAccountBalances` from wire
+ * (sodex-docs/rest-v1/schema.md#spotaccountbalances): `{blockTime,
+ * blockHeight, balances[]}`, inner shape `{id, coin, total, locked}`. All
+ * fields required; no sentinel defaults.
+ */
+export function parseSpotBalances(raw: WireRecord): SpotAccountBalances {
+  requireWireField(raw, "parseSpotBalances", "blockTime");
+  requireWireField(raw, "parseSpotBalances", "blockHeight");
+  requireWireField(raw, "parseSpotBalances", "balances");
+  if (!Array.isArray(raw.balances)) {
+    throw new Error("parseSpotBalances: wire field `balances` must be an array");
+  }
   return {
-    symbol: raw.symbol,
-    lastPx: raw.lastPx,
-    openPx: raw.openPx,
-    highPx: raw.highPx,
-    lowPx: raw.lowPx,
-    volume: raw.volume,
-    quoteVolume: raw.quoteVolume,
-    openTime: BigInt(raw.openTime),
-    closeTime: BigInt(raw.closeTime),
+    blockTime: BigInt(raw.blockTime),
+    blockHeight: BigInt(raw.blockHeight),
+    balances: raw.balances.map((b: WireRecord) => {
+      requireWireField(b, "parseSpotBalances.balance", "id");
+      requireWireField(b, "parseSpotBalances.balance", "coin");
+      requireWireField(b, "parseSpotBalances.balance", "total");
+      requireWireField(b, "parseSpotBalances.balance", "locked");
+      return {
+        coinId: BigInt(b.id),
+        coin: String(b.coin),
+        total: String(b.total),
+        locked: String(b.locked),
+      };
+    }),
   };
 }
 
-function parseBookTicker(raw: WireRecord): BookTicker {
+/**
+ * Parse `WsSpotState` from wire (sodex-docs/rest-v1/schema.md#wsspotstate).
+ * All 5 envelope fields required. Short wire keys (`aid`, `uid`, `B`, `O`)
+ * are renamed for call-site clarity; this is derivation, not invention.
+ */
+export function parseSpotAccountSnapshot(raw: WireRecord): SpotAccountSnapshot {
+  requireWireField(raw, "parseSpotAccountSnapshot", "user");
+  requireWireField(raw, "parseSpotAccountSnapshot", "aid");
+  requireWireField(raw, "parseSpotAccountSnapshot", "uid");
+  requireWireField(raw, "parseSpotAccountSnapshot", "B");
+  requireWireField(raw, "parseSpotAccountSnapshot", "O");
+  if (!Array.isArray(raw.B)) {
+    throw new Error("parseSpotAccountSnapshot: wire field `B` must be an array");
+  }
+  if (!Array.isArray(raw.O)) {
+    throw new Error("parseSpotAccountSnapshot: wire field `O` must be an array");
+  }
   return {
-    symbol: raw.symbol,
-    bidPx: raw.bidPx,
-    bidSz: raw.bidSz,
-    askPx: raw.askPx,
-    askSz: raw.askSz,
+    userAddress: String(raw.user),
+    accountId: BigInt(raw.aid),
+    userId: BigInt(raw.uid),
+    balances: raw.B.map(parseSpotSnapshotBalance),
+    openOrders: raw.O.map(parseSpotSnapshotOrder),
   };
 }
 
-function parseOrderBook(raw: WireRecord): OrderBook {
-  const levelMap = (l: WireRecord) => ({ price: l[0] ?? l.price, size: l[1] ?? l.size });
+/**
+ * Parse `WsSpotBalance` from wire (sodex-docs/rest-v1/schema.md#wsspotbalance).
+ * Required: `{i, a, t, l}`.
+ */
+export function parseSpotSnapshotBalance(b: WireRecord): SpotSnapshotBalance {
+  requireWireField(b, "parseSpotSnapshotBalance", "i");
+  requireWireField(b, "parseSpotSnapshotBalance", "a");
+  requireWireField(b, "parseSpotSnapshotBalance", "t");
+  requireWireField(b, "parseSpotSnapshotBalance", "l");
   return {
-    symbol: raw.symbol ?? "",
-    lastUpdateID: BigInt(raw.lastUpdateID ?? raw.lastUpdateId ?? 0),
-    bids: Array.isArray(raw.bids) ? raw.bids.map(levelMap) : [],
-    asks: Array.isArray(raw.asks) ? raw.asks.map(levelMap) : [],
+    coinId: BigInt(b.i),
+    coin: String(b.a),
+    total: String(b.t),
+    locked: String(b.l),
   };
 }
 
-function parseKline(raw: WireRecord): Kline {
+/**
+ * Parse `WsSpotOrder` from wire (sodex-docs/rest-v1/schema.md#wsspotorder).
+ * Required: `{s, c, i, S, o, f, p, q, X, z, v, M}`; nullable-required: `F`
+ * (wire `null` → SDK `undefined`).
+ */
+export function parseSpotSnapshotOrder(o: WireRecord): SpotSnapshotOrder {
+  requireWireField(o, "parseSpotSnapshotOrder", "s");
+  requireWireField(o, "parseSpotSnapshotOrder", "c");
+  requireWireField(o, "parseSpotSnapshotOrder", "i");
+  requireWireField(o, "parseSpotSnapshotOrder", "S");
+  requireWireField(o, "parseSpotSnapshotOrder", "o");
+  requireWireField(o, "parseSpotSnapshotOrder", "f");
+  requireWireField(o, "parseSpotSnapshotOrder", "p");
+  requireWireField(o, "parseSpotSnapshotOrder", "q");
+  requireWireField(o, "parseSpotSnapshotOrder", "X");
+  requireWireField(o, "parseSpotSnapshotOrder", "z");
+  requireWireField(o, "parseSpotSnapshotOrder", "v");
+  requireWireField(o, "parseSpotSnapshotOrder", "M");
   return {
-    symbol: raw.symbol ?? raw.s ?? "",
-    interval: raw.interval ?? "",
-    openTime: BigInt(raw.openTime ?? raw.startTime ?? raw.t ?? 0),
-    closeTime: BigInt(raw.closeTime ?? raw.endTime ?? 0),
-    openPx: raw.openPx ?? raw.open ?? raw.o ?? "",
-    highPx: raw.highPx ?? raw.high ?? raw.h ?? "",
-    lowPx: raw.lowPx ?? raw.low ?? raw.l ?? "",
-    closePx: raw.closePx ?? raw.close ?? raw.c ?? "",
-    volume: raw.volume ?? raw.a ?? raw.v ?? "",
-    quoteVolume: raw.quoteVolume ?? raw.q ?? raw.v ?? "",
-    tradeCount: raw.tradeCount ?? raw.trades ?? 0,
-  };
-}
-
-function parseTrade(raw: WireRecord): Trade {
-  return {
-    symbol: raw.symbol ?? "",
-    id: BigInt(raw.id ?? raw.tradeID ?? 0),
-    price: raw.price,
-    quantity: raw.quantity ?? raw.qty ?? "",
-    quoteQuantity: raw.quoteQuantity ?? raw.quoteQty ?? "",
-    time: BigInt(raw.time ?? raw.timestamp ?? 0),
-    isBuyerMaker: raw.isBuyerMaker,
-  };
-}
-
-function parseSpotBalances(raw: WireRecord): SpotAccountBalances {
-  const list = Array.isArray(raw) ? raw : Array.isArray(raw?.balances) ? raw.balances : [];
-  return {
-    accountId: BigInt(raw.accountID ?? raw.accountId ?? 0),
-    balances: list.map((b: WireRecord) => ({
-      coinId: BigInt(b.coinID ?? b.coinId ?? 0),
-      coin: b.coin ?? "",
-      available: b.available ?? "0",
-      locked: b.locked ?? "0",
-      total: b.total ?? b.balance ?? "0",
-    })),
-  };
-}
-
-function parseSpotAccountSnapshot(raw: WireRecord): SpotAccountSnapshot {
-  return {
-    userAddress: raw.user ?? raw.userAddress ?? "",
-    accountId: BigInt(raw.aid ?? raw.accountID ?? 0),
-    userId: BigInt(raw.uid ?? raw.userID ?? 0),
-    balances: Array.isArray(raw.B) ? raw.B.map(parseSpotSnapshotBalance) : [],
-    openOrders: Array.isArray(raw.O) ? raw.O.map(parseSpotSnapshotOrder) : [],
-  };
-}
-
-function parseSpotSnapshotBalance(b: WireRecord): SpotSnapshotBalance {
-  return {
-    coinId: BigInt(b.i ?? 0),
-    coin: b.a ?? "",
-    total: b.t ?? "0",
-    locked: b.l ?? "0",
-  };
-}
-
-function parseSpotSnapshotOrder(o: WireRecord): SpotSnapshotOrder {
-  return {
-    symbol: o.s ?? "",
-    clOrdID: o.c ?? "",
-    orderID: BigInt(o.i ?? 0),
+    orderID: BigInt(o.i),
+    symbol: String(o.s),
+    clOrdID: String(o.c),
     side: orderSideFromName(o.S),
     type: orderTypeFromName(o.o),
     timeInForce: timeInForceFromName(o.f),
-    price: o.p ?? "0",
-    quantity: o.q ?? "0",
-    funds: o.F === null ? null : (o.F ?? "0"),
     status: orderStatusFromName(o.X),
-    executedQty: o.z ?? "0",
-    executedQuote: o.v ?? "0",
-    marginLocked: o.M ?? "0",
+    price: String(o.p),
+    origQty: String(o.q),
+    executedQty: String(o.z),
+    executedValue: String(o.v),
+    marginFrozen: String(o.M),
+    funds: optString(o, "F"),
   };
 }
 
-function parseSpotOrder(raw: WireRecord): SpotOrder {
+/**
+ * Parse `SpotOrder` from wire (sodex-docs/rest-v1/schema.md#spotorder).
+ * Required: orderID, symbol, side, type, status, executedQty, executedValue,
+ * marginFrozen. Optional fields return `undefined` when the server omits them.
+ */
+export function parseSpotOrder(raw: WireRecord): SpotOrder {
+  requireWireField(raw, "parseSpotOrder", "orderID");
+  requireWireField(raw, "parseSpotOrder", "symbol");
+  requireWireField(raw, "parseSpotOrder", "side");
+  requireWireField(raw, "parseSpotOrder", "type");
+  requireWireField(raw, "parseSpotOrder", "status");
+  requireWireField(raw, "parseSpotOrder", "executedQty");
+  requireWireField(raw, "parseSpotOrder", "executedValue");
+  requireWireField(raw, "parseSpotOrder", "marginFrozen");
+  const tif = raw.timeInForce;
   return {
-    symbol: raw.symbol ?? "",
-    symbolId: BigInt(raw.symbolID ?? raw.symbolId ?? 0),
-    accountId: BigInt(raw.accountID ?? raw.accountId ?? 0),
-    orderID: BigInt(raw.orderID ?? 0),
-    clOrdID: raw.clOrdID ?? "",
+    orderID: BigInt(raw.orderID),
+    symbol: String(raw.symbol),
     side: orderSideFromName(raw.side),
     type: orderTypeFromName(raw.type),
-    timeInForce: timeInForceFromName(raw.timeInForce),
-    price: raw.price ?? "0",
-    quantity: raw.quantity ?? "0",
-    executedQty: raw.executedQty ?? "0",
-    cumQuoteQty: raw.cumQuoteQty ?? "0",
     status: orderStatusFromName(raw.status),
-    createTime: BigInt(raw.createTime ?? 0),
-    updateTime: BigInt(raw.updateTime ?? 0),
+    executedQty: String(raw.executedQty),
+    executedValue: String(raw.executedValue),
+    marginFrozen: String(raw.marginFrozen),
+    clOrdID: optString(raw, "clOrdID"),
+    timeInForce:
+      tif === undefined || tif === null ? undefined : timeInForceFromName(tif),
+    price: optString(raw, "price"),
+    origQty: optString(raw, "origQty"),
+    funds: optString(raw, "funds"),
+    createdAt: optBigInt(raw, "createdAt"),
+    updatedAt: optBigInt(raw, "updatedAt"),
   };
 }
 
