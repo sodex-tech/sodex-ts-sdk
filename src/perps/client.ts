@@ -73,15 +73,17 @@ import type { PerpsSigner } from "./signer";
 import type {
   FundingPayment,
   MarkPriceTicker,
-  PerpsCoinInfo,
-  PerpsSnapshotBalance,
-  PerpsSnapshotOrder,
-  PerpsSnapshotPosition,
+  PerpsAccountBalance,
+  PerpsAccountBalances,
   PerpsAccountSnapshot,
-  PerpsSnapshotSymbolConfig,
+  PerpsCoinInfo,
   PerpsOpenPositions,
   PerpsOrder,
   PerpsPosition,
+  PerpsSnapshotBalance,
+  PerpsSnapshotOrder,
+  PerpsSnapshotPosition,
+  PerpsSnapshotSymbolConfig,
   PerpsSymbolInfo,
   PerpsTicker,
 } from "./types";
@@ -184,10 +186,11 @@ export class PerpsClient {
   }
 
 
-  async getBalances(userAddress: string, accountId?: bigint): Promise<unknown> {
-    return this.http.get(`/accounts/${userAddress}/balances`, {
+  async getBalances(userAddress: string, accountId?: bigint): Promise<PerpsAccountBalances> {
+    const raw = await this.http.get<any>(`/accounts/${userAddress}/balances`, {
       query: { accountID: accountId },
     });
+    return parsePerpsBalances(raw);
   }
 
   async getOpenOrders(
@@ -269,8 +272,8 @@ export class PerpsClient {
       endTime?: bigint;
       limit?: number;
     } = {},
-  ): Promise<unknown[]> {
-    return this.http.get<WireRecord[]>(`/accounts/${userAddress}/positions/history`, {
+  ): Promise<PerpsPosition[]> {
+    const raw = await this.http.get<WireRecord[]>(`/accounts/${userAddress}/positions/history`, {
       query: {
         accountID: params.accountId,
         symbol: params.symbol,
@@ -279,6 +282,7 @@ export class PerpsClient {
         limit: params.limit,
       },
     });
+    return raw.map(parsePerpsPosition);
   }
 
   async getUserTrades(
@@ -391,39 +395,39 @@ export class PerpsClient {
 
   async modifyOrder(
     input: Omit<PerpsModifyOrderInput, "symbolId"> & { symbol: SymbolRef },
-  ): Promise<unknown> {
+  ): Promise<void> {
     const { symbol, ...rest } = input;
     const payload = buildPerpsModifyOrderPayload({
       ...rest,
       symbolId: this.symbols.resolveId(symbol),
     });
-    return this.signedPost("/trade/orders/modify", payload);
+    await this.signedPost("/trade/orders/modify", payload);
   }
 
-  async scheduleCancel(input: ScheduleCancelInput): Promise<unknown> {
-    return this.signedPost("/trade/orders/schedule-cancel", buildScheduleCancelPayload(input));
+  async scheduleCancel(input: ScheduleCancelInput): Promise<void> {
+    await this.signedPost("/trade/orders/schedule-cancel", buildScheduleCancelPayload(input));
   }
 
   async updateLeverage(
     input: Omit<UpdateLeverageInput, "symbolId"> & { symbol: SymbolRef },
-  ): Promise<unknown> {
+  ): Promise<void> {
     const { symbol, ...rest } = input;
     const payload = buildUpdateLeveragePayload({
       ...rest,
       symbolId: this.symbols.resolveId(symbol),
     });
-    return this.signedPost("/trade/leverage", payload);
+    await this.signedPost("/trade/leverage", payload);
   }
 
   async updateMargin(
     input: Omit<UpdateMarginInput, "symbolId"> & { symbol: SymbolRef },
-  ): Promise<unknown> {
+  ): Promise<void> {
     const { symbol, ...rest } = input;
     const payload = buildUpdateMarginPayload({
       ...rest,
       symbolId: this.symbols.resolveId(symbol),
     });
-    return this.signedPost("/trade/margin", payload);
+    await this.signedPost("/trade/margin", payload);
   }
 
   async transferAsset(
@@ -436,8 +440,8 @@ export class PerpsClient {
     return { id: BigInt(raw.id) };
   }
 
-  async revokeApiKey(input: RevokeApiKeyInput): Promise<unknown> {
-    return this.signedDelete("/accounts/api-keys", buildRevokeApiKeyPayload(input));
+  async revokeApiKey(input: RevokeApiKeyInput): Promise<void> {
+    await this.signedDelete("/accounts/api-keys", buildRevokeApiKeyPayload(input));
   }
 
   async addApiKey(
@@ -453,7 +457,7 @@ export class PerpsClient {
       chainId?: bigint;
       apiKeyName?: string;
     },
-  ): Promise<unknown> {
+  ): Promise<void> {
     const nonce = this.nonce();
     const chainId = opts.chainId ?? this.chainId;
     const domain = makeDomain(UNIVERSAL_DOMAIN_NAME, chainId);
@@ -471,7 +475,7 @@ export class PerpsClient {
         ? hexToBytes(opts.masterPrivateKey)
         : opts.masterPrivateKey;
     const wireSig = signDigest(digest, keyBytes, SIG_TYPE_ADD_API_KEY);
-    return this.http.post("/accounts/api-keys", {
+    await this.http.post("/accounts/api-keys", {
       body: {
         accountID: input.accountId,
         name: input.name,
@@ -668,16 +672,16 @@ function parseOrderBook(raw: WireRecord): OrderBook {
 
 function parseKline(raw: WireRecord): Kline {
   return {
-    symbol: raw.symbol ?? "",
+    symbol: raw.symbol ?? raw.s ?? "",
     interval: raw.interval ?? "",
-    openTime: BigInt(raw.openTime ?? raw.startTime ?? 0),
+    openTime: BigInt(raw.openTime ?? raw.startTime ?? raw.t ?? 0),
     closeTime: BigInt(raw.closeTime ?? raw.endTime ?? 0),
-    openPx: raw.openPx ?? raw.open ?? "",
-    highPx: raw.highPx ?? raw.high ?? "",
-    lowPx: raw.lowPx ?? raw.low ?? "",
-    closePx: raw.closePx ?? raw.close ?? "",
-    volume: raw.volume ?? "",
-    quoteVolume: raw.quoteVolume ?? "",
+    openPx: raw.openPx ?? raw.open ?? raw.o ?? "",
+    highPx: raw.highPx ?? raw.high ?? raw.h ?? "",
+    lowPx: raw.lowPx ?? raw.low ?? raw.l ?? "",
+    closePx: raw.closePx ?? raw.close ?? raw.c ?? "",
+    volume: raw.volume ?? raw.a ?? raw.v ?? "",
+    quoteVolume: raw.quoteVolume ?? raw.q ?? raw.v ?? "",
     tradeCount: raw.tradeCount ?? raw.trades ?? 0,
   };
 }
@@ -691,6 +695,22 @@ function parseTrade(raw: WireRecord): Trade {
     quoteQuantity: raw.quoteQuantity ?? raw.quoteQty ?? "",
     time: BigInt(raw.time ?? raw.timestamp ?? 0),
     isBuyerMaker: raw.isBuyerMaker,
+  };
+}
+
+function parsePerpsBalances(raw: WireRecord): PerpsAccountBalances {
+  const list = Array.isArray(raw) ? raw : Array.isArray(raw?.balances) ? raw.balances : [];
+  return {
+    accountId: BigInt(raw.accountID ?? raw.accountId ?? 0),
+    balances: list.map(
+      (b: WireRecord): PerpsAccountBalance => ({
+        coinId: BigInt(b.coinID ?? b.coinId ?? 0),
+        coin: b.coin ?? "",
+        available: b.available ?? "0",
+        locked: b.locked ?? "0",
+        total: b.total ?? b.balance ?? "0",
+      }),
+    ),
   };
 }
 

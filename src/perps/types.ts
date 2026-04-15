@@ -161,6 +161,19 @@ export interface FundingPayment {
 
 export type PerpsExecType = ExecType;
 
+export interface PerpsAccountBalance {
+  coinId: bigint;
+  coin: string;
+  available: string;
+  locked: string;
+  total: string;
+}
+
+export interface PerpsAccountBalances {
+  accountId: bigint;
+  balances: PerpsAccountBalance[];
+}
+
 export interface PerpsAccountSnapshot {
   userAddress: string;
   accountId: bigint;

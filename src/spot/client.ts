@@ -359,8 +359,8 @@ export class SpotClient {
     return raw.map(parseBatchReplaceReceipt);
   }
 
-  async scheduleCancel(input: ScheduleCancelInput): Promise<unknown> {
-    return this.signedPost("/trade/orders/schedule-cancel", buildScheduleCancelPayload(input));
+  async scheduleCancel(input: ScheduleCancelInput): Promise<void> {
+    await this.signedPost("/trade/orders/schedule-cancel", buildScheduleCancelPayload(input));
   }
 
   async transferAsset(
@@ -373,8 +373,8 @@ export class SpotClient {
     return { id: BigInt(raw.id) };
   }
 
-  async revokeApiKey(input: RevokeApiKeyInput): Promise<unknown> {
-    return this.signedDelete("/accounts/api-keys", buildRevokeApiKeyPayload(input));
+  async revokeApiKey(input: RevokeApiKeyInput): Promise<void> {
+    await this.signedDelete("/accounts/api-keys", buildRevokeApiKeyPayload(input));
   }
 
   /** Uses the `universal` EIP-712 domain; must be signed by the master private key. */
@@ -391,7 +391,7 @@ export class SpotClient {
       chainId?: bigint;
       apiKeyName?: string;
     },
-  ): Promise<unknown> {
+  ): Promise<void> {
     const nonce = this.nonce();
     const chainId = opts.chainId ?? this.chainId;
     const domain = makeDomain(UNIVERSAL_DOMAIN_NAME, chainId);
@@ -416,7 +416,7 @@ export class SpotClient {
       publicKey: bytesToHex(input.publicKey),
       expiresAt: input.expiresAt,
     };
-    return this.http.post("/accounts/api-keys", {
+    await this.http.post("/accounts/api-keys", {
       body,
       signed: {
         key: opts.apiKeyName ?? "default",
@@ -584,16 +584,16 @@ function parseOrderBook(raw: WireRecord): OrderBook {
 
 function parseKline(raw: WireRecord): Kline {
   return {
-    symbol: raw.symbol ?? "",
+    symbol: raw.symbol ?? raw.s ?? "",
     interval: raw.interval ?? "",
-    openTime: BigInt(raw.openTime ?? raw.startTime ?? 0),
+    openTime: BigInt(raw.openTime ?? raw.startTime ?? raw.t ?? 0),
     closeTime: BigInt(raw.closeTime ?? raw.endTime ?? 0),
-    openPx: raw.openPx ?? raw.open ?? "",
-    highPx: raw.highPx ?? raw.high ?? "",
-    lowPx: raw.lowPx ?? raw.low ?? "",
-    closePx: raw.closePx ?? raw.close ?? "",
-    volume: raw.volume ?? "",
-    quoteVolume: raw.quoteVolume ?? "",
+    openPx: raw.openPx ?? raw.open ?? raw.o ?? "",
+    highPx: raw.highPx ?? raw.high ?? raw.h ?? "",
+    lowPx: raw.lowPx ?? raw.low ?? raw.l ?? "",
+    closePx: raw.closePx ?? raw.close ?? raw.c ?? "",
+    volume: raw.volume ?? raw.a ?? raw.v ?? "",
+    quoteVolume: raw.quoteVolume ?? raw.q ?? raw.v ?? "",
     tradeCount: raw.tradeCount ?? raw.trades ?? 0,
   };
 }
