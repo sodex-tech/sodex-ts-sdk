@@ -45,6 +45,11 @@ export interface PerpsSymbolInfo {
   marketDeviationRatio: string;
   maxLeverage: number;
   initLeverage: number;
+  /**
+   * Leverage brackets. Wire schema marks this as a non-nullable array, but
+   * the server can emit `null` for symbols that have no tiers configured;
+   * `parsePerpsSymbol` normalizes that `null` to `[]`.
+   */
   marginTiers: MarginTier[];
   fundingInterval: number;
   interestRate: string;
@@ -119,6 +124,14 @@ export interface PerpsPosition {
   updatedAt: bigint;
 }
 
+/**
+ * Response of `GET /accounts/{user}/positions`. Wire shape:
+ * sodex-docs/rest-v1/schema.md#perpsaccountopenposition.
+ *
+ * The server emits JSON `null` for empty position sets (Go `nil` slice
+ * convention) even though the schema types `positions` as a non-nullable
+ * array; `parsePerpsOpenPositions` normalizes that `null` to `[]`.
+ */
 export interface PerpsOpenPositions {
   blockTime: bigint;
   blockHeight: bigint;
@@ -213,6 +226,11 @@ export interface PerpsAccountBalance {
  * Response of `GET /accounts/{user}/balances`. Wire shape:
  * sodex-docs/rest-v1/schema.md#perpsaccountbalance
  * (`{blockTime, blockHeight, balances[]}`).
+ *
+ * The server emits JSON `null` for empty balance sets (Go `nil` slice
+ * convention) even though the schema types `balances` as a non-nullable
+ * array; `parsePerpsBalances` normalizes that `null` to `[]` so the SDK
+ * field stays `T[]`.
  */
 export interface PerpsAccountBalances {
   blockTime: bigint;
@@ -224,9 +242,13 @@ export interface PerpsAccountBalances {
  * Frontend-state snapshot returned by `GET /accounts/{user}/state`. Wire
  * shape: sodex-docs/rest-v1/schema.md#wsperpsstate.
  *
- * Short wire keys are renamed for call-site clarity (derivation); nullable
- * wire fields are surfaced as TS optionals (wire `null` → SDK `undefined`),
- * matching the REST-side convention used by `PerpsOrder` et al.
+ * Short wire keys are renamed for call-site clarity (derivation); the
+ * four collection fields (`balances`, `openOrders`, `openPositions`,
+ * `symbolConfigs`) are documented as non-nullable arrays on the wire but
+ * the server emits JSON `null` for empty collections (Go `nil` slice
+ * convention). `parsePerpsAccountSnapshot` normalizes those `null`s to
+ * `[]`, keeping the SDK shape a clean `T[]` so callers can iterate
+ * without `?? []` guards.
  */
 export interface PerpsAccountSnapshot {
   /** User EVM address (wire `user`). */
@@ -251,13 +273,13 @@ export interface PerpsAccountSnapshot {
   openIsolatedFrozenMargin: string;
   /** Cross frozen margin for open orders (wire `ocm`). */
   openCrossFrozenMargin: string;
-  /** Balances (wire `B`). */
+  /** Balances (wire `B`). Empty when the server sends `null`. */
   balances: PerpsSnapshotBalance[];
-  /** Latest up-to-100 open orders (wire `O`). */
+  /** Latest up-to-100 open orders (wire `O`). Empty when the server sends `null`. */
   openOrders: PerpsSnapshotOrder[];
-  /** Open positions (wire `P`). */
+  /** Open positions (wire `P`). Empty when the server sends `null`. */
   openPositions: PerpsSnapshotPosition[];
-  /** Touched symbol configs (wire `S`). */
+  /** Touched symbol configs (wire `S`). Empty when the server sends `null`. */
   symbolConfigs: PerpsSnapshotSymbolConfig[];
 }
 

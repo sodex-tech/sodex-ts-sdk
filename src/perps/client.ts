@@ -54,6 +54,8 @@ import {
   optBigIntArray,
   optEnum,
   optString,
+  parseWireArray,
+  parseWireList,
   requireBoolean,
   requireWireField,
 } from "../common/types";
@@ -141,32 +143,32 @@ export class PerpsClient {
 
   async getSymbols(symbol?: string): Promise<PerpsSymbolInfo[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/symbols", { query: { symbol } });
-    return raw.map(parsePerpsSymbol);
+    return parseWireList(raw, "getSymbols", parsePerpsSymbol);
   }
 
   async getCoins(coin?: string): Promise<PerpsCoinInfo[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/coins", { query: { coin } });
-    return raw.map(parsePerpsCoin);
+    return parseWireList(raw, "getCoins", parsePerpsCoin);
   }
 
   async getTickers(symbol?: string): Promise<PerpsTicker[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/tickers", { query: { symbol } });
-    return raw.map(parsePerpsTicker);
+    return parseWireList(raw, "getTickers", parsePerpsTicker);
   }
 
   async getMiniTickers(symbol?: string): Promise<MiniTicker[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/miniTickers", { query: { symbol } });
-    return raw.map(parseMiniTicker);
+    return parseWireList(raw, "getMiniTickers", parseMiniTicker);
   }
 
   async getMarkPrices(symbol?: string): Promise<MarkPriceTicker[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/mark-prices", { query: { symbol } });
-    return raw.map(parseMarkPrice);
+    return parseWireList(raw, "getMarkPrices", parseMarkPrice);
   }
 
   async getBookTickers(symbol?: string): Promise<BookTicker[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/bookTickers", { query: { symbol } });
-    return raw.map(parseBookTicker);
+    return parseWireList(raw, "getBookTickers", parseBookTicker);
   }
 
   async getOrderBook(symbol: SymbolRef, limit?: number): Promise<OrderBook> {
@@ -185,7 +187,9 @@ export class PerpsClient {
     const raw = await this.http.get<WireRecord[]>(`/markets/${encodeURIComponent(name)}/klines`, {
       query: { ...params },
     });
-    return raw.map((r) => parseKline(r, { symbol: name, interval: params.interval }));
+    return parseWireList(raw, "getKlines", (r) =>
+      parseKline(r, { symbol: name, interval: params.interval }),
+    );
   }
 
   async getRecentTrades(symbol: SymbolRef, limit?: number): Promise<Trade[]> {
@@ -193,7 +197,7 @@ export class PerpsClient {
     const raw = await this.http.get<WireRecord[]>(`/markets/${encodeURIComponent(name)}/trades`, {
       query: { limit },
     });
-    return raw.map(parseTrade);
+    return parseWireList(raw, "getRecentTrades", parseTrade);
   }
 
 
@@ -211,14 +215,13 @@ export class PerpsClient {
     // Wire: `PerpsAccountOpenOrder` envelope `{blockTime, blockHeight, orders}`
     // per sodex-docs/rest-v1/schema.md#perpsaccountopenorder. We surface only
     // the `orders` list for now; block metadata is intentionally dropped.
+    //
+    // Server emits `"orders": null` for accounts with no open orders (Go
+    // `nil` slice convention); `parseWireArray` normalizes that to `[]`.
     const raw = await this.http.get<WireRecord>(`/accounts/${userAddress}/orders`, {
       query: { symbol: params.symbol, accountID: params.accountId },
     });
-    requireWireField(raw, "getOpenOrders", "orders");
-    if (!Array.isArray(raw.orders)) {
-      throw new Error("getOpenOrders: wire field `orders` must be an array");
-    }
-    return raw.orders.map(parsePerpsOrder);
+    return parseWireArray(raw, "getOpenOrders", "orders", parsePerpsOrder);
   }
 
   async getOpenPositions(
@@ -242,10 +245,13 @@ export class PerpsClient {
     userAddress: string,
     params: { accountId?: bigint; name?: string } = {},
   ): Promise<ApiKeyInfo[]> {
+    // Server may send `data: null` for an account with no API keys; the
+    // HttpClient unwraps that to `undefined`, which `parseWireList`
+    // normalizes to `[]` (rather than crashing on `raw.map`).
     const raw = await this.http.get<WireRecord[]>(`/accounts/${userAddress}/api-keys`, {
       query: { accountID: params.accountId, name: params.name },
     });
-    return raw.map(parseApiKey);
+    return parseWireList(raw, "getApiKeys", parseApiKey);
   }
 
   async getFeeRate(
@@ -268,6 +274,7 @@ export class PerpsClient {
       limit?: number;
     } = {},
   ): Promise<PerpsOrder[]> {
+    // Returns `[]` when the server sends `data: null` (no history).
     const raw = await this.http.get<WireRecord[]>(`/accounts/${userAddress}/orders/history`, {
       query: {
         accountID: params.accountId,
@@ -277,7 +284,7 @@ export class PerpsClient {
         limit: params.limit,
       },
     });
-    return raw.map(parsePerpsOrder);
+    return parseWireList(raw, "getOrderHistory", parsePerpsOrder);
   }
 
   async getPositionHistory(
@@ -290,6 +297,7 @@ export class PerpsClient {
       limit?: number;
     } = {},
   ): Promise<PerpsPosition[]> {
+    // Returns `[]` when the server sends `data: null` (no history).
     const raw = await this.http.get<WireRecord[]>(`/accounts/${userAddress}/positions/history`, {
       query: {
         accountID: params.accountId,
@@ -299,7 +307,7 @@ export class PerpsClient {
         limit: params.limit,
       },
     });
-    return raw.map(parsePerpsPosition);
+    return parseWireList(raw, "getPositionHistory", parsePerpsPosition);
   }
 
   async getUserTrades(
@@ -313,6 +321,7 @@ export class PerpsClient {
       limit?: number;
     } = {},
   ): Promise<UserTrade[]> {
+    // Returns `[]` when the server sends `data: null` (no trades).
     const raw = await this.http.get<WireRecord[]>(`/accounts/${userAddress}/trades`, {
       query: {
         accountID: params.accountId,
@@ -323,7 +332,7 @@ export class PerpsClient {
         limit: params.limit,
       },
     });
-    return raw.map(parseUserTrade);
+    return parseWireList(raw, "getUserTrades", parseUserTrade);
   }
 
   async getFundingHistory(
@@ -336,6 +345,7 @@ export class PerpsClient {
       limit?: number;
     } = {},
   ): Promise<FundingPayment[]> {
+    // Returns `[]` when the server sends `data: null` (no history).
     const raw = await this.http.get<WireRecord[]>(`/accounts/${userAddress}/fundings`, {
       query: {
         accountID: params.accountId,
@@ -345,7 +355,7 @@ export class PerpsClient {
         limit: params.limit,
       },
     });
-    return raw.map(parseFunding);
+    return parseWireList(raw, "getFundingHistory", parseFunding);
   }
 
 
@@ -562,7 +572,10 @@ export class PerpsClient {
 
 /**
  * Parse `PerpsSymbol` from wire (sodex-docs/rest-v1/schema.md#perpssymbol).
- * 30 required fields + 2 optional (`openInterestCap`, `openInterestCapUSD`).
+ * 29 required scalar fields + `marginTiers` (spec-required array,
+ * server-observed nullable) + 2 optional (`openInterestCap`,
+ * `openInterestCapUSD`). Wire `null` on `marginTiers` is normalized to
+ * `[]` so the SDK shape stays `MarginTier[]`.
  */
 export function parsePerpsSymbol(raw: WireRecord): PerpsSymbolInfo {
   for (const key of [
@@ -590,7 +603,6 @@ export function parsePerpsSymbol(raw: WireRecord): PerpsSymbolInfo {
     "marketDeviationRatio",
     "maxLeverage",
     "initLeverage",
-    "marginTiers",
     "fundingInterval",
     "interestRate",
     "maxFundingRate",
@@ -600,9 +612,6 @@ export function parsePerpsSymbol(raw: WireRecord): PerpsSymbolInfo {
     "status",
   ] as const) {
     requireWireField(raw, "parsePerpsSymbol", key);
-  }
-  if (!Array.isArray(raw.marginTiers)) {
-    throw new Error("parsePerpsSymbol: wire field `marginTiers` must be an array");
   }
   return {
     id: BigInt(raw.id),
@@ -629,7 +638,7 @@ export function parsePerpsSymbol(raw: WireRecord): PerpsSymbolInfo {
     marketDeviationRatio: String(raw.marketDeviationRatio),
     maxLeverage: Number(raw.maxLeverage),
     initLeverage: Number(raw.initLeverage),
-    marginTiers: raw.marginTiers.map(parseMarginTier),
+    marginTiers: parseWireArray(raw, "parsePerpsSymbol", "marginTiers", parseMarginTier),
     fundingInterval: Number(raw.fundingInterval),
     interestRate: String(raw.interestRate),
     maxFundingRate: String(raw.maxFundingRate),
@@ -761,38 +770,75 @@ export function parseMarkPrice(raw: WireRecord): MarkPriceTicker {
  * Parse `PerpsAccountBalance` (the response envelope) from wire
  * (sodex-docs/rest-v1/schema.md#perpsaccountbalance): `{blockTime,
  * blockHeight, balances[]}`, inner shape `{id, coin, total, marginRatio,
- * price?}`. All fields required except `price`.
+ * price?}`.
+ *
+ * `balances` is documented as a non-nullable array but the server emits
+ * `null` for empty accounts (Go `nil` slice); we normalize that to `[]`
+ * so the SDK shape stays `T[]`. Inner fields remain strictly required
+ * except `price` (spec-optional).
  */
 export function parsePerpsBalances(raw: WireRecord): PerpsAccountBalances {
   requireWireField(raw, "parsePerpsBalances", "blockTime");
   requireWireField(raw, "parsePerpsBalances", "blockHeight");
-  requireWireField(raw, "parsePerpsBalances", "balances");
-  if (!Array.isArray(raw.balances)) {
-    throw new Error("parsePerpsBalances: wire field `balances` must be an array");
-  }
   return {
     blockTime: BigInt(raw.blockTime),
     blockHeight: BigInt(raw.blockHeight),
-    balances: raw.balances.map((b: WireRecord): PerpsAccountBalance => {
-      requireWireField(b, "parsePerpsBalances.balance", "id");
-      requireWireField(b, "parsePerpsBalances.balance", "coin");
-      requireWireField(b, "parsePerpsBalances.balance", "total");
-      requireWireField(b, "parsePerpsBalances.balance", "marginRatio");
-      return {
-        coinId: BigInt(b.id),
-        coin: String(b.coin),
-        total: String(b.total),
-        marginRatio: String(b.marginRatio),
-        price: optString(b, "price"),
-      };
-    }),
+    balances: parseWireArray(
+      raw,
+      "parsePerpsBalances",
+      "balances",
+      (b: WireRecord): PerpsAccountBalance => {
+        requireWireField(b, "parsePerpsBalances.balance", "id");
+        requireWireField(b, "parsePerpsBalances.balance", "coin");
+        requireWireField(b, "parsePerpsBalances.balance", "total");
+        requireWireField(b, "parsePerpsBalances.balance", "marginRatio");
+        return {
+          coinId: BigInt(b.id),
+          coin: String(b.coin),
+          total: String(b.total),
+          marginRatio: String(b.marginRatio),
+          price: optString(b, "price"),
+        };
+      },
+    ),
   };
 }
 
 /**
  * Parse `WsPerpsState` from wire (sodex-docs/rest-v1/schema.md#wsperpsstate).
- * All 15 envelope fields required; short wire keys renamed for call-site
- * clarity (derivation, not invention).
+ *
+ * Design trade-offs and observed-server-vs-spec deviations:
+ * 1. Collection fields `B`, `O`, `P`, `S` are documented as non-nullable
+ *    `Array<T>` in the schema, but the production REST server emits JSON
+ *    `null` when the underlying Go slice is `nil` (i.e. for empty
+ *    collections). Before this change the parser called `requireWireField`
+ *    for those keys, which treats `null` as "missing required" and throws
+ *    — meaning an empty account made `getAccountState()` reject outright.
+ * 2. Wire `null` on a collection field is normalized to `[]` (not
+ *    `undefined`). Rationale: for an array-typed SDK field, the difference
+ *    between "server sent null" and "server sent []" is not load-bearing
+ *    for any caller — both mean "no items" — and keeping the SDK type as
+ *    `T[]` lets callers iterate with for/of and .map without `?? []`
+ *    guards. The wire-level distinction is preserved in tests and in the
+ *    parser, so schema drift (e.g. the field becoming an object) still
+ *    throws. This is a deliberate, narrow invention scoped to
+ *    array-typed collection fields, justified by the ergonomics win over
+ *    a strict `T[] | undefined` shape.
+ * 3. The 11 scalar envelope fields (`user`…`ocm`) remain strictly required:
+ *    they are not observed to come back as `null` even for empty users,
+ *    and accepting `null`/missing silently for e.g. `av` would risk a
+ *    `BigInt(null)` NaN-style coercion bug later.
+ * 4. Each collection element is still parsed by the same strict
+ *    per-element parser (`parsePerpsSnapshotBalance` et al.); `null` is
+ *    only accepted at the whole-collection level, not per-item.
+ * 5. We keep one parser per wire shape. If a WS client later needs
+ *    `WsPerpsState` via push, it gets its own parser; this one is
+ *    documented to match the REST `/accounts/{user}/state` response
+ *    (including the null-for-empty quirk) and must not be widened into a
+ *    union parser.
+ *
+ * Short wire keys are renamed for call-site clarity (derivation, not
+ * invention).
  */
 export function parsePerpsAccountSnapshot(raw: WireRecord): PerpsAccountSnapshot {
   for (const key of [
@@ -807,24 +853,8 @@ export function parsePerpsAccountSnapshot(raw: WireRecord): PerpsAccountSnapshot
     "cm",
     "oim",
     "ocm",
-    "B",
-    "O",
-    "P",
-    "S",
   ] as const) {
     requireWireField(raw, "parsePerpsAccountSnapshot", key);
-  }
-  for (const [key, arr] of [
-    ["B", raw.B],
-    ["O", raw.O],
-    ["P", raw.P],
-    ["S", raw.S],
-  ] as const) {
-    if (!Array.isArray(arr)) {
-      throw new Error(
-        `parsePerpsAccountSnapshot: wire field \`${key}\` must be an array`,
-      );
-    }
   }
   return {
     userAddress: String(raw.user),
@@ -838,10 +868,20 @@ export function parsePerpsAccountSnapshot(raw: WireRecord): PerpsAccountSnapshot
     crossFrozenMargin: String(raw.cm),
     openIsolatedFrozenMargin: String(raw.oim),
     openCrossFrozenMargin: String(raw.ocm),
-    balances: raw.B.map(parsePerpsSnapshotBalance),
-    openOrders: raw.O.map(parsePerpsSnapshotOrder),
-    openPositions: raw.P.map(parsePerpsSnapshotPosition),
-    symbolConfigs: raw.S.map(parsePerpsSnapshotSymbolConfig),
+    balances: parseWireArray(raw, "parsePerpsAccountSnapshot", "B", parsePerpsSnapshotBalance),
+    openOrders: parseWireArray(raw, "parsePerpsAccountSnapshot", "O", parsePerpsSnapshotOrder),
+    openPositions: parseWireArray(
+      raw,
+      "parsePerpsAccountSnapshot",
+      "P",
+      parsePerpsSnapshotPosition,
+    ),
+    symbolConfigs: parseWireArray(
+      raw,
+      "parsePerpsAccountSnapshot",
+      "S",
+      parsePerpsSnapshotSymbolConfig,
+    ),
   };
 }
 
@@ -983,20 +1023,20 @@ export function parsePerpsSnapshotSymbolConfig(
 
 /**
  * Parse `PerpsAccountOpenPosition` from wire
- * (sodex-docs/rest-v1/schema.md#perpsaccountopenposition).
- * `{blockTime, blockHeight, positions}` — all 3 required.
+ * (sodex-docs/rest-v1/schema.md#perpsaccountopenposition):
+ * `{blockTime, blockHeight, positions}`.
+ *
+ * `positions` is documented as a non-nullable array but the server emits
+ * `null` for accounts with no open positions (Go `nil` slice); we
+ * normalize that to `[]` so the SDK shape stays `T[]`.
  */
 export function parsePerpsOpenPositions(raw: WireRecord): PerpsOpenPositions {
   requireWireField(raw, "parsePerpsOpenPositions", "blockTime");
   requireWireField(raw, "parsePerpsOpenPositions", "blockHeight");
-  requireWireField(raw, "parsePerpsOpenPositions", "positions");
-  if (!Array.isArray(raw.positions)) {
-    throw new Error("parsePerpsOpenPositions: wire field `positions` must be an array");
-  }
   return {
     blockTime: BigInt(raw.blockTime),
     blockHeight: BigInt(raw.blockHeight),
-    positions: raw.positions.map(parsePerpsPosition),
+    positions: parseWireArray(raw, "parsePerpsOpenPositions", "positions", parsePerpsPosition),
   };
 }
 

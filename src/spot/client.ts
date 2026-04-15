@@ -48,6 +48,8 @@ import {
   parseUserTrade,
   optBigInt,
   optString,
+  parseWireArray,
+  parseWireList,
   requireWireField,
 } from "../common/types";
 import { CoinRegistry } from "../registry/coin-registry";
@@ -135,33 +137,33 @@ export class SpotClient {
     const raw = await this.http.get<WireRecord[]>("/markets/symbols", {
       query: { symbol: await this.normalizeSymbolFilter(symbol) },
     });
-    return raw.map(parseSpotSymbol);
+    return parseWireList(raw, "getSymbols", parseSpotSymbol);
   }
 
   async getCoins(coin?: string): Promise<SpotCoinInfo[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/coins", { query: { coin } });
-    return raw.map(parseSpotCoin);
+    return parseWireList(raw, "getCoins", parseSpotCoin);
   }
 
   async getTickers(symbol?: string): Promise<SpotTicker[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/tickers", {
       query: { symbol: await this.normalizeSymbolFilter(symbol) },
     });
-    return raw.map(parseSpotTicker);
+    return parseWireList(raw, "getTickers", parseSpotTicker);
   }
 
   async getMiniTickers(symbol?: string): Promise<MiniTicker[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/miniTickers", {
       query: { symbol: await this.normalizeSymbolFilter(symbol) },
     });
-    return raw.map(parseMiniTicker);
+    return parseWireList(raw, "getMiniTickers", parseMiniTicker);
   }
 
   async getBookTickers(symbol?: string): Promise<BookTicker[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/bookTickers", {
       query: { symbol: await this.normalizeSymbolFilter(symbol) },
     });
-    return raw.map(parseBookTicker);
+    return parseWireList(raw, "getBookTickers", parseBookTicker);
   }
 
   async getOrderBook(symbol: SymbolRef, limit?: number): Promise<OrderBook> {
@@ -180,7 +182,9 @@ export class SpotClient {
     const raw = await this.http.get<WireRecord[]>(`/markets/${encodeURIComponent(name)}/klines`, {
       query: { ...params },
     });
-    return raw.map((r) => parseKline(r, { symbol: name, interval: params.interval }));
+    return parseWireList(raw, "getKlines", (r) =>
+      parseKline(r, { symbol: name, interval: params.interval }),
+    );
   }
 
   async getRecentTrades(symbol: SymbolRef, limit?: number): Promise<Trade[]> {
@@ -188,7 +192,7 @@ export class SpotClient {
     const raw = await this.http.get<WireRecord[]>(`/markets/${encodeURIComponent(name)}/trades`, {
       query: { limit },
     });
-    return raw.map(parseTrade);
+    return parseWireList(raw, "getRecentTrades", parseTrade);
   }
 
 
@@ -206,17 +210,16 @@ export class SpotClient {
     // Wire: `SpotAccountOpenOrder` envelope `{blockTime, blockHeight, orders}`
     // per sodex-docs/rest-v1/schema.md#spotaccountopenorder. We surface only
     // the `orders` list for now; block metadata is intentionally dropped.
+    //
+    // Server emits `"orders": null` for accounts with no open orders (Go
+    // `nil` slice convention); `parseWireArray` normalizes that to `[]`.
     const raw = await this.http.get<WireRecord>(`/accounts/${userAddress}/orders`, {
       query: {
         symbol: await this.normalizeSymbolFilter(params.symbol),
         accountID: params.accountId,
       },
     });
-    requireWireField(raw, "getOpenOrders", "orders");
-    if (!Array.isArray(raw.orders)) {
-      throw new Error("getOpenOrders: wire field `orders` must be an array");
-    }
-    return raw.orders.map(parseSpotOrder);
+    return parseWireArray(raw, "getOpenOrders", "orders", parseSpotOrder);
   }
 
   async getAccountState(userAddress: string, accountId?: bigint): Promise<SpotAccountSnapshot> {
@@ -230,10 +233,11 @@ export class SpotClient {
     userAddress: string,
     params: { accountId?: bigint; name?: string } = {},
   ): Promise<ApiKeyInfo[]> {
+    // Returns `[]` when the server sends `data: null` (no API keys).
     const raw = await this.http.get<WireRecord[]>(`/accounts/${userAddress}/api-keys`, {
       query: { accountID: params.accountId, name: params.name },
     });
-    return raw.map(parseApiKey);
+    return parseWireList(raw, "getApiKeys", parseApiKey);
   }
 
   async getFeeRate(
@@ -259,6 +263,7 @@ export class SpotClient {
       limit?: number;
     } = {},
   ): Promise<SpotOrder[]> {
+    // Returns `[]` when the server sends `data: null` (no history).
     const raw = await this.http.get<WireRecord[]>(`/accounts/${userAddress}/orders/history`, {
       query: {
         accountID: params.accountId,
@@ -268,7 +273,7 @@ export class SpotClient {
         limit: params.limit,
       },
     });
-    return raw.map(parseSpotOrder);
+    return parseWireList(raw, "getOrderHistory", parseSpotOrder);
   }
 
   async getUserTrades(
@@ -282,6 +287,7 @@ export class SpotClient {
       limit?: number;
     } = {},
   ): Promise<UserTrade[]> {
+    // Returns `[]` when the server sends `data: null` (no trades).
     const raw = await this.http.get<WireRecord[]>(`/accounts/${userAddress}/trades`, {
       query: {
         accountID: params.accountId,
@@ -292,7 +298,7 @@ export class SpotClient {
         limit: params.limit,
       },
     });
-    return raw.map(parseUserTrade);
+    return parseWireList(raw, "getUserTrades", parseUserTrade);
   }
 
 
@@ -635,20 +641,19 @@ export function parseSpotTicker(raw: WireRecord): SpotTicker {
 /**
  * Parse `SpotAccountBalances` from wire
  * (sodex-docs/rest-v1/schema.md#spotaccountbalances): `{blockTime,
- * blockHeight, balances[]}`, inner shape `{id, coin, total, locked}`. All
- * fields required; no sentinel defaults.
+ * blockHeight, balances[]}`, inner shape `{id, coin, total, locked}`.
+ *
+ * `balances` is documented as a non-nullable array but the server emits
+ * `null` for empty accounts (Go `nil` slice); we normalize that to `[]`
+ * so the SDK shape stays `T[]`.
  */
 export function parseSpotBalances(raw: WireRecord): SpotAccountBalances {
   requireWireField(raw, "parseSpotBalances", "blockTime");
   requireWireField(raw, "parseSpotBalances", "blockHeight");
-  requireWireField(raw, "parseSpotBalances", "balances");
-  if (!Array.isArray(raw.balances)) {
-    throw new Error("parseSpotBalances: wire field `balances` must be an array");
-  }
   return {
     blockTime: BigInt(raw.blockTime),
     blockHeight: BigInt(raw.blockHeight),
-    balances: raw.balances.map((b: WireRecord) => {
+    balances: parseWireArray(raw, "parseSpotBalances", "balances", (b: WireRecord) => {
       requireWireField(b, "parseSpotBalances.balance", "id");
       requireWireField(b, "parseSpotBalances.balance", "coin");
       requireWireField(b, "parseSpotBalances.balance", "total");
@@ -665,27 +670,37 @@ export function parseSpotBalances(raw: WireRecord): SpotAccountBalances {
 
 /**
  * Parse `WsSpotState` from wire (sodex-docs/rest-v1/schema.md#wsspotstate).
- * All 5 envelope fields required. Short wire keys (`aid`, `uid`, `B`, `O`)
- * are renamed for call-site clarity; this is derivation, not invention.
+ *
+ * Design trade-offs and observed-server-vs-spec deviations:
+ * 1. `B` and `O` are documented as non-nullable `Array<T>` in the schema,
+ *    but the production REST server emits JSON `null` when the underlying
+ *    Go slice is `nil` (i.e. for empty collections). Accepting `null` here
+ *    prevents `getAccountState()` from rejecting for empty accounts.
+ * 2. Wire `null` on a collection field is normalized to `[]` so the SDK
+ *    shape stays `T[]` — a deliberate, narrow invention scoped to
+ *    array-typed collection fields, justified because the "server sent
+ *    null" vs "server sent []" distinction is not load-bearing at the
+ *    SDK surface and keeping `T[]` lets callers iterate without `?? []`.
+ * 3. The three scalar envelope fields (`user`, `aid`, `uid`) remain
+ *    strictly required; they are not observed to come back as `null`.
+ * 4. One parser per wire shape — if a WS client ever needs `WsSpotState`
+ *    via push, it gets its own parser; this one is documented to match
+ *    the REST `/accounts/{user}/state` response including the
+ *    null-for-empty quirk.
+ *
+ * Short wire keys (`aid`, `uid`, `B`, `O`) are renamed for call-site
+ * clarity; this is derivation, not invention.
  */
 export function parseSpotAccountSnapshot(raw: WireRecord): SpotAccountSnapshot {
   requireWireField(raw, "parseSpotAccountSnapshot", "user");
   requireWireField(raw, "parseSpotAccountSnapshot", "aid");
   requireWireField(raw, "parseSpotAccountSnapshot", "uid");
-  requireWireField(raw, "parseSpotAccountSnapshot", "B");
-  requireWireField(raw, "parseSpotAccountSnapshot", "O");
-  if (!Array.isArray(raw.B)) {
-    throw new Error("parseSpotAccountSnapshot: wire field `B` must be an array");
-  }
-  if (!Array.isArray(raw.O)) {
-    throw new Error("parseSpotAccountSnapshot: wire field `O` must be an array");
-  }
   return {
     userAddress: String(raw.user),
     accountId: BigInt(raw.aid),
     userId: BigInt(raw.uid),
-    balances: raw.B.map(parseSpotSnapshotBalance),
-    openOrders: raw.O.map(parseSpotSnapshotOrder),
+    balances: parseWireArray(raw, "parseSpotAccountSnapshot", "B", parseSpotSnapshotBalance),
+    openOrders: parseWireArray(raw, "parseSpotAccountSnapshot", "O", parseSpotSnapshotOrder),
   };
 }
 

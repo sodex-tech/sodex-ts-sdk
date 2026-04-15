@@ -112,13 +112,14 @@ export interface OrderBook {
  * is taken from the caller's request context because the REST wire omits it.
  * Levels must be `[price, size]` tuples of length exactly 2 — a longer tuple
  * signals a schema change we want to surface, not ignore.
+ *
+ * `bids`/`asks` are normalized from wire `null` (Go `nil` slice, emitted
+ * when a side is empty) to `[]` so the SDK field type stays `T[]`.
  */
 export function parseOrderBook(raw: WireRecord, ctx: { symbol: string }): OrderBook {
   requireWireField(raw, "parseOrderBook", "updateID");
   requireWireField(raw, "parseOrderBook", "blockTime");
   requireWireField(raw, "parseOrderBook", "blockHeight");
-  requireWireField(raw, "parseOrderBook", "bids");
-  requireWireField(raw, "parseOrderBook", "asks");
   return {
     symbol: ctx.symbol,
     updateID: BigInt(raw.updateID),
@@ -130,8 +131,9 @@ export function parseOrderBook(raw: WireRecord, ctx: { symbol: string }): OrderB
 }
 
 function toOrderBookLevels(raw: unknown, side: "bids" | "asks"): OrderBookLevel[] {
+  if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) {
-    throw new Error(`parseOrderBook: \`${side}\` must be an array`);
+    throw new Error(`parseOrderBook: \`${side}\` must be an array or null`);
   }
   return raw.map((l, i) => {
     if (!Array.isArray(l) || l.length !== 2) {
@@ -305,6 +307,52 @@ export function optBigIntArray(
     throw new Error(`${parser}: wire field \`${key}\` must be an array of uint64`);
   }
   return v.map((x) => BigInt(x));
+}
+
+/**
+ * Coerce a wire array-of-records field to `T[]`, applying `mapper` to each
+ * element. Go backends emit JSON `null` for `nil` slices even when the
+ * schema types the field as a non-nullable array; we surface that as an
+ * empty array `[]` so call sites can iterate without `?? []` guards and
+ * the SDK type can stay `T[]` (a cleaner shape than `T[] | undefined` for
+ * what is semantically a "no items" collection).
+ *
+ * Returns `[]` when the field is missing or `null`. Throws when the field
+ * is present and not `null` but also not an array (genuine schema drift).
+ */
+export function parseWireArray<T>(
+  raw: WireRecord,
+  parser: string,
+  key: string,
+  mapper: (r: WireRecord) => T,
+): T[] {
+  const v = raw[key];
+  if (v === undefined || v === null) return [];
+  if (!Array.isArray(v)) {
+    throw new Error(`${parser}: wire field \`${key}\` must be an array or null`);
+  }
+  return v.map((r) => mapper(r as WireRecord));
+}
+
+/**
+ * Map a top-level list response already unwrapped by `HttpClient.get`.
+ * When the server sends `{code: 0, data: null}` for an empty list (Go
+ * `nil` slice convention), `HttpClient` surfaces the unwrapped payload as
+ * `undefined`; without this helper the call site's `raw.map(...)` would
+ * crash with a `TypeError`. Returns `[]` in that case — same rationale as
+ * `parseWireArray`: array-typed APIs are cleaner when the empty case is
+ * `[]` rather than `undefined`.
+ */
+export function parseWireList<T>(
+  raw: WireRecord[] | null | undefined,
+  parser: string,
+  mapper: (r: WireRecord) => T,
+): T[] {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) {
+    throw new Error(`${parser}: expected top-level array or null`);
+  }
+  return raw.map((r) => mapper(r as WireRecord));
 }
 
 /**

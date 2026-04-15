@@ -85,6 +85,10 @@ export interface SpotAccountBalance {
  * Response of `GET /accounts/{user}/balances`. Wire shape:
  * sodex-docs/rest-v1/schema.md#spotaccountbalances
  * (`{blockTime, blockHeight, balances[]}`).
+ *
+ * The server emits JSON `null` for empty balance sets (Go `nil` slice
+ * convention) even though the schema types `balances` as a non-nullable
+ * array; `parseSpotBalances` normalizes that `null` to `[]`.
  */
 export interface SpotAccountBalances {
   blockTime: bigint;
@@ -125,6 +129,11 @@ export interface SpotOrder {
  *
  * Fields are renamed from the single-letter wire keys for call-site clarity;
  * this is pure derivation (no value invention).
+ *
+ * `balances` / `openOrders` are documented as non-nullable arrays but the
+ * server emits JSON `null` for empty collections (Go `nil` slice
+ * convention); `parseSpotAccountSnapshot` normalizes those `null`s to `[]`
+ * so the SDK shape stays `T[]`.
  */
 export interface SpotAccountSnapshot {
   /** User EVM address (wire `user`). */
@@ -133,9 +142,9 @@ export interface SpotAccountSnapshot {
   accountId: bigint;
   /** User ID (wire `uid`). */
   userId: bigint;
-  /** Balances (wire `B`). */
+  /** Balances (wire `B`). Empty when the server sends `null`. */
   balances: SpotSnapshotBalance[];
-  /** Latest up-to-100 open orders (wire `O`). */
+  /** Latest up-to-100 open orders (wire `O`). Empty when the server sends `null`. */
   openOrders: SpotSnapshotOrder[];
 }
 

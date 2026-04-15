@@ -23,8 +23,8 @@ describe("parseOrderBook", () => {
     });
   });
 
-  it.each(["updateID", "blockTime", "blockHeight", "bids", "asks"] as const)(
-    "throws when required field `%s` is missing",
+  it.each(["updateID", "blockTime", "blockHeight"] as const)(
+    "throws when required scalar field `%s` is missing",
     (missing) => {
       const full: Record<string, unknown> = {
         updateID: 1n,
@@ -37,6 +37,38 @@ describe("parseOrderBook", () => {
       expect(() => parseOrderBook(full, { symbol: "X" })).toThrow(
         new RegExp(`missing required field \\\`${missing}\\\``),
       );
+    },
+  );
+
+  it.each(["bids", "asks"] as const)(
+    "normalizes `%s` = null (empty side) to []",
+    (side) => {
+      const raw: Record<string, unknown> = {
+        updateID: 1n,
+        blockTime: 1n,
+        blockHeight: 1n,
+        bids: [["100", "1"]],
+        asks: [["101", "1"]],
+        [side]: null,
+      };
+      const book = parseOrderBook(raw, { symbol: "X" });
+      expect(book[side]).toEqual([]);
+    },
+  );
+
+  it.each(["bids", "asks"] as const)(
+    "normalizes missing `%s` to []",
+    (side) => {
+      const raw: Record<string, unknown> = {
+        updateID: 1n,
+        blockTime: 1n,
+        blockHeight: 1n,
+        bids: [["100", "1"]],
+        asks: [["101", "1"]],
+      };
+      delete raw[side];
+      const book = parseOrderBook(raw, { symbol: "X" });
+      expect(book[side]).toEqual([]);
     },
   );
 
@@ -69,12 +101,12 @@ describe("parseOrderBook", () => {
     ).toThrow(/asks\[0\] must be a \[price, size\] tuple/);
   });
 
-  it("throws when bids/asks is not an array", () => {
+  it("throws when bids/asks is not an array (and not null)", () => {
     expect(() =>
       parseOrderBook(
         { updateID: 1n, blockTime: 1n, blockHeight: 1n, bids: "oops", asks: [] },
         { symbol: "X" },
       ),
-    ).toThrow(/`bids` must be an array/);
+    ).toThrow(/`bids` must be an array or null/);
   });
 });

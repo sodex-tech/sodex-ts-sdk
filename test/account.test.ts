@@ -74,8 +74,8 @@ describe("parseSpotBalances", () => {
     });
   });
 
-  it.each(["blockTime", "blockHeight", "balances"] as const)(
-    "throws when envelope field `%s` is missing",
+  it.each(["blockTime", "blockHeight"] as const)(
+    "throws when scalar envelope field `%s` is missing",
     (key) => {
       const raw = full();
       delete raw[key];
@@ -84,6 +84,18 @@ describe("parseSpotBalances", () => {
       );
     },
   );
+
+  it("normalizes null `balances` to []", () => {
+    // Server emits `"balances": null` for accounts with no coins held;
+    // previously this rejected with "must be an array".
+    const parsed = parseSpotBalances({ blockTime: 1n, blockHeight: 1n, balances: null });
+    expect(parsed.balances).toEqual([]);
+  });
+
+  it("normalizes missing `balances` to []", () => {
+    const parsed = parseSpotBalances({ blockTime: 1n, blockHeight: 1n });
+    expect(parsed.balances).toEqual([]);
+  });
 
   it.each(["id", "coin", "total", "locked"] as const)(
     "throws when inner balance field `%s` is missing",

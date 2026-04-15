@@ -123,8 +123,8 @@ describe("parseSpotAccountSnapshot", () => {
     expect(snap.openOrders).toEqual([]);
   });
 
-  it.each(["user", "aid", "uid", "B", "O"] as const)(
-    "throws when envelope `%s` missing",
+  it.each(["user", "aid", "uid"] as const)(
+    "throws when scalar envelope `%s` missing",
     (k) => {
       const r = full() as Record<string, unknown>;
       delete r[k];
@@ -134,12 +134,26 @@ describe("parseSpotAccountSnapshot", () => {
     },
   );
 
-  it("throws when B/O present but not arrays", () => {
+  it.each(["B", "O"] as const)("normalizes `%s` = null to []", (k) => {
+    const snap = parseSpotAccountSnapshot({ ...full(), [k]: null });
+    if (k === "B") expect(snap.balances).toEqual([]);
+    if (k === "O") expect(snap.openOrders).toEqual([]);
+  });
+
+  it.each(["B", "O"] as const)("normalizes `%s` missing to []", (k) => {
+    const r = full() as Record<string, unknown>;
+    delete r[k];
+    const snap = parseSpotAccountSnapshot(r);
+    if (k === "B") expect(snap.balances).toEqual([]);
+    if (k === "O") expect(snap.openOrders).toEqual([]);
+  });
+
+  it("throws when B/O present but not arrays (and not null)", () => {
     expect(() => parseSpotAccountSnapshot({ ...full(), B: "nope" })).toThrow(
-      /`B` must be an array/,
+      /`B` must be an array or null/,
     );
     expect(() => parseSpotAccountSnapshot({ ...full(), O: 42 })).toThrow(
-      /`O` must be an array/,
+      /`O` must be an array or null/,
     );
   });
 });
@@ -406,11 +420,7 @@ describe("parsePerpsAccountSnapshot", () => {
     "cm",
     "oim",
     "ocm",
-    "B",
-    "O",
-    "P",
-    "S",
-  ] as const)("throws when envelope field `%s` missing", (k) => {
+  ] as const)("throws when scalar envelope field `%s` missing", (k) => {
     const r = full() as Record<string, unknown>;
     delete r[k];
     expect(() => parsePerpsAccountSnapshot(r)).toThrow(
@@ -419,10 +429,62 @@ describe("parsePerpsAccountSnapshot", () => {
   });
 
   it.each(["B", "O", "P", "S"] as const)(
-    "throws when `%s` is present but not an array",
+    "normalizes `%s` = null to []",
+    (k) => {
+      const snap = parsePerpsAccountSnapshot({ ...full(), [k]: null });
+      if (k === "B") expect(snap.balances).toEqual([]);
+      if (k === "O") expect(snap.openOrders).toEqual([]);
+      if (k === "P") expect(snap.openPositions).toEqual([]);
+      if (k === "S") expect(snap.symbolConfigs).toEqual([]);
+    },
+  );
+
+  it.each(["B", "O", "P", "S"] as const)(
+    "normalizes missing `%s` to []",
+    (k) => {
+      const r = full() as Record<string, unknown>;
+      delete r[k];
+      const snap = parsePerpsAccountSnapshot(r);
+      if (k === "B") expect(snap.balances).toEqual([]);
+      if (k === "O") expect(snap.openOrders).toEqual([]);
+      if (k === "P") expect(snap.openPositions).toEqual([]);
+      if (k === "S") expect(snap.symbolConfigs).toEqual([]);
+    },
+  );
+
+  it("matches the observed empty-account wire (B/O/P all null, S populated)", () => {
+    // Mirrors the production shape for an account with no balances, no
+    // orders, and no positions but with at least one touched symbol
+    // config — previously this rejected with "wire field `B` must be an
+    // array".
+    const snap = parsePerpsAccountSnapshot({
+      user: "0x9e03000000000000000000000000000000000bd00",
+      aid: 155414n,
+      uid: 155414n,
+      av: "0",
+      am: "0",
+      ami: "0",
+      amw: "0",
+      im: "0",
+      cm: "0",
+      oim: "0",
+      ocm: "0",
+      B: null,
+      O: null,
+      P: null,
+      S: [],
+    });
+    expect(snap.balances).toEqual([]);
+    expect(snap.openOrders).toEqual([]);
+    expect(snap.openPositions).toEqual([]);
+    expect(snap.symbolConfigs).toEqual([]);
+  });
+
+  it.each(["B", "O", "P", "S"] as const)(
+    "throws when `%s` is present but not an array (and not null)",
     (k) => {
       expect(() => parsePerpsAccountSnapshot({ ...full(), [k]: "nope" })).toThrow(
-        new RegExp(`\\\`${k}\\\` must be an array`),
+        new RegExp(`\\\`${k}\\\` must be an array or null`),
       );
     },
   );
