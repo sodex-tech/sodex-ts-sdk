@@ -23,6 +23,10 @@ export interface BookTicker {
   bidSz: string;
   askPx: string;
   askSz: string;
+  /** WS-only: order book update sequence number (wire `u`). */
+  updateId?: bigint;
+  /** WS-only: event timestamp in milliseconds (wire `E`). */
+  eventTime?: bigint;
 }
 
 /**
@@ -53,8 +57,12 @@ export interface MiniTicker {
   lowPx: string;
   volume: string;
   quoteVolume: string;
-  openTime: bigint;
-  closeTime: bigint;
+  /** REST always provides; WS miniTicker channel does not. */
+  openTime?: bigint;
+  /** REST always provides; WS miniTicker channel does not. */
+  closeTime?: bigint;
+  /** WS-only: event timestamp in milliseconds (wire `E`). */
+  eventTime?: bigint;
 }
 
 /**
@@ -205,6 +213,10 @@ export interface Kline {
   quoteVolume: string;
   /** Undefined when the server omits `n` — do not read as "zero trades". */
   tradeCount?: number;
+  /** WS-only: kline close time in milliseconds (wire `T`). */
+  closeTime?: bigint;
+  /** WS-only: whether this kline is closed (wire `x`). */
+  isClosed?: boolean;
 }
 
 /**
@@ -410,6 +422,8 @@ export interface Trade {
   buyerAccountId?: bigint;
   /** Seller account ID (wire `si`). Undefined when the server does not report it. */
   sellerAccountId?: bigint;
+  /** WS-only: event timestamp in milliseconds (wire `E`). */
+  eventTime?: bigint;
 }
 
 /**

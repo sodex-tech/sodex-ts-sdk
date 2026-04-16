@@ -75,6 +75,8 @@ export interface MarkPriceTicker {
   indexPrice: string;
   markPrice: string;
   openInterest: string;
+  /** WS-only: event timestamp in milliseconds (wire `E`). */
+  eventTime?: bigint;
 }
 
 export interface PerpsTicker {
@@ -93,13 +95,20 @@ export interface PerpsTicker {
   bidSz: string;
   askPx: string;
   askSz: string;
-  fundingRate: string;
-  nextFundingTime: bigint;
-  indexPrice: string;
-  markPrice: string;
-  openInterest: string;
+  /** REST always provides; WS ticker channel does not — use `markPrice` stream instead. */
+  fundingRate?: string;
+  /** REST always provides; WS ticker channel does not. */
+  nextFundingTime?: bigint;
+  /** REST always provides; WS ticker channel does not. */
+  indexPrice?: string;
+  /** REST always provides; WS ticker channel does not. */
+  markPrice?: string;
+  /** REST always provides; WS ticker channel does not. */
+  openInterest?: string;
   openTime: bigint;
   closeTime: bigint;
+  /** WS-only: event timestamp in milliseconds (wire `E`). */
+  eventTime?: bigint;
 }
 
 export interface PerpsPosition {

@@ -7,6 +7,7 @@ export default defineConfig({
     perps: "src/perps/index.ts",
     signer: "src/signer/index.ts",
     evm: "src/evm/index.ts",
+    ws: "src/ws/index.ts",
   },
   format: ["esm", "cjs"],
   outExtension({ format }) {

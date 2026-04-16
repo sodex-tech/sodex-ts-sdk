@@ -1,7 +1,7 @@
 {
   "name": "@sodex/sdk",
   "version": "0.1.0",
-  "description": "Official TypeScript SDK for the Sodex exchange (spot + perps REST)",
+  "description": "Official TypeScript SDK for the Sodex exchange (spot + perps, REST + WebSocket)",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -33,6 +33,11 @@
       "types": "./dist/evm.d.ts",
       "import": "./dist/evm.mjs",
       "require": "./dist/evm.cjs"
+    },
+    "./ws": {
+      "types": "./dist/ws.d.ts",
+      "import": "./dist/ws.mjs",
+      "require": "./dist/ws.cjs"
     }
   },
   "files": ["dist", "README.md", "LICENSE"],

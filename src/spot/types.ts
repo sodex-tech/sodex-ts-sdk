@@ -65,6 +65,8 @@ export interface SpotTicker {
   askSz: string;
   openTime: bigint;
   closeTime: bigint;
+  /** WS-only: event timestamp in milliseconds (wire `E`). */
+  eventTime?: bigint;
 }
 
 /**
