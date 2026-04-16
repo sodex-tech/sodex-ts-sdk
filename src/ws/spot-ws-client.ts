@@ -61,7 +61,7 @@ export class SpotWsClient {
   }
 
   constructor(opts: WsClientOptions) {
-    const url = `${opts.baseUrl.replace(/\/$/, "")}/ws/spot`;
+    const url = `${toWsUrl(opts.baseUrl)}/ws/spot`;
     this.transport = new WsTransport({ ...opts, url });
   }
 
@@ -288,4 +288,9 @@ export class SpotWsClient {
 
 function toArray(data: unknown): unknown[] {
   return Array.isArray(data) ? data : [data];
+}
+
+/** Normalize `https://` → `wss://`, `http://` → `ws://`, strip trailing slash. */
+function toWsUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/$/, "").replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
 }

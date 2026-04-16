@@ -50,7 +50,7 @@ export class PerpsWsClient {
   }
 
   constructor(opts: WsClientOptions) {
-    const url = `${opts.baseUrl.replace(/\/$/, "")}/ws/perps`;
+    const url = `${toWsUrl(opts.baseUrl)}/ws/perps`;
     this.transport = new WsTransport({ ...opts, url });
   }
 
@@ -298,4 +298,9 @@ export class PerpsWsClient {
 
 function toArray(data: unknown): unknown[] {
   return Array.isArray(data) ? data : [data];
+}
+
+/** Normalize `https://` → `wss://`, `http://` → `ws://`, strip trailing slash. */
+function toWsUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/$/, "").replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
 }
