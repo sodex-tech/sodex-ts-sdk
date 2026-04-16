@@ -300,7 +300,7 @@ function toArray(data: unknown): unknown[] {
   return Array.isArray(data) ? data : [data];
 }
 
-/** Normalize `https://` → `wss://`, `http://` → `ws://`, strip trailing slash. */
+/** Normalize `https://` → `wss://`, strip trailing slash. */
 function toWsUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/$/, "").replace(/^https:\/\//, "wss://").replace(/^http:\/\//, "ws://");
+  return baseUrl.replace(/\/$/, "").replace(/^https:\/\//, "wss://");
 }
