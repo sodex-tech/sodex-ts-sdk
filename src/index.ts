@@ -1,4 +1,4 @@
-export { SpotClient, createMonotonicNonce, type NonceProvider } from "./spot/client";
+export { SpotClient } from "./spot/client";
 export type { SpotClientOptions } from "./spot/client";
 export { SpotSigner } from "./spot/signer";
 export type { SpotSignerOptions } from "./spot/signer";

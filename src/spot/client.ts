@@ -70,6 +70,7 @@ import {
   buildScheduleCancelPayload,
   buildTransferAssetPayload,
 } from "./actions";
+import { type NonceProvider, createMonotonicNonce } from "../common/nonce";
 import type { SpotSigner } from "./signer";
 import type {
   SpotAccountBalances,
@@ -82,16 +83,7 @@ import type {
   SpotTicker,
 } from "./types";
 
-export type NonceProvider = () => bigint;
-
-export function createMonotonicNonce(): NonceProvider {
-  let last = 0n;
-  return () => {
-    const now = BigInt(Date.now());
-    last = now > last ? now : last + 1n;
-    return last;
-  };
-}
+const autoTransferId = createMonotonicNonce();
 
 export interface SpotClientOptions {
   baseUrl: string;
@@ -385,11 +377,11 @@ export class SpotClient {
   }
 
   async transferAsset(
-    input: Omit<TransferAssetInput, "coinId"> & { coin: string | bigint },
+    input: Omit<TransferAssetInput, "coinId" | "id"> & { coin: string | bigint; id?: bigint },
   ): Promise<TransferReceipt> {
-    const { coin, ...rest } = input;
+    const { coin, id, ...rest } = input;
     const coinId = typeof coin === "bigint" ? coin : this.coins.resolveId(coin);
-    const payload = buildTransferAssetPayload({ ...rest, coinId });
+    const payload = buildTransferAssetPayload({ ...rest, coinId, id: id ?? autoTransferId() });
     const raw = await this.signedPost<WireRecord>("/accounts/transfers", payload);
     requireWireField(raw, "transferAsset", "id");
     return { id: BigInt(raw.id) };

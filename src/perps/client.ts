@@ -61,7 +61,7 @@ import {
 } from "../common/types";
 import { CoinRegistry } from "../registry/coin-registry";
 import { type SymbolRef, SymbolRegistry } from "../registry/symbol-registry";
-import { type NonceProvider, createMonotonicNonce } from "../spot/client";
+import { type NonceProvider, createMonotonicNonce } from "../common/nonce";
 import {
   type PerpsCancelOrderInput,
   type PerpsModifyOrderInput,
@@ -100,6 +100,8 @@ import type {
   PerpsSymbolInfo,
   PerpsTicker,
 } from "./types";
+
+const autoTransferId = createMonotonicNonce();
 
 export interface PerpsClientOptions {
   baseUrl: string;
@@ -458,11 +460,11 @@ export class PerpsClient {
   }
 
   async transferAsset(
-    input: Omit<TransferAssetInput, "coinId"> & { coin: string | bigint },
+    input: Omit<TransferAssetInput, "coinId" | "id"> & { coin: string | bigint; id?: bigint },
   ): Promise<TransferReceipt> {
-    const { coin, ...rest } = input;
+    const { coin, id, ...rest } = input;
     const coinId = typeof coin === "bigint" ? coin : this.coins.resolveId(coin);
-    const payload = buildTransferAssetPayload({ ...rest, coinId });
+    const payload = buildTransferAssetPayload({ ...rest, coinId, id: id ?? autoTransferId() });
     const raw = await this.signedPost<WireRecord>("/accounts/transfers", payload);
     requireWireField(raw, "transferAsset", "id");
     return { id: BigInt(raw.id) };
