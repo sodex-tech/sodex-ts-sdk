@@ -286,7 +286,7 @@ export interface PerpsAccountSnapshot {
 /**
  * One balance inside a perps snapshot. Wire shape:
  * sodex-docs/rest-v1/schema.md#wsperpsbalancedetailed
- * (`WsPerpsBalance` + `{iw, aw, ww, wm, am}`).
+ * (`WsPerpsBalance` + `{iw, aw, at, wm, am}`).
  */
 export interface PerpsSnapshotBalance {
   /** Coin ID (wire `i`). */
@@ -301,7 +301,7 @@ export interface PerpsSnapshotBalance {
   oraclePrice: string;
   /** Available wallet balance for margin (wire `aw`). */
   availableForMargin: string;
-  /** Available wallet balance for withdrawal (wire `ww`). */
+  /** Available wallet balance for withdrawal (wire `at`). */
   availableForWithdraw: string;
   /** Wallet balance corresponding margin (wire `wm`). */
   walletMargin: string;

@@ -169,7 +169,7 @@ describe("parsePerpsSnapshotBalance", () => {
     px: "1",
     iw: null,
     aw: "800",
-    ww: "800",
+    at: "800",
     wm: "100",
     am: "700",
   });
@@ -194,7 +194,7 @@ describe("parsePerpsSnapshotBalance", () => {
     expect(parsePerpsSnapshotBalance({ ...full(), iw: "200" }).isolatedFrozen).toBe("200");
   });
 
-  it.each(["i", "a", "wb", "mr", "px", "aw", "ww", "wm", "am"] as const)(
+  it.each(["i", "a", "wb", "mr", "px", "aw", "at", "wm", "am"] as const)(
     "throws when required `%s` missing",
     (k) => {
       const b = full() as Record<string, unknown>;

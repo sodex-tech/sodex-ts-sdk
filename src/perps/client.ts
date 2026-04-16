@@ -890,11 +890,11 @@ export function parsePerpsAccountSnapshot(raw: WireRecord): PerpsAccountSnapshot
 /**
  * Parse `WsPerpsBalanceDetailed` from wire
  * (sodex-docs/rest-v1/schema.md#wsperpsbalancedetailed).
- * Required: `{i, a, wb, mr, px, aw, ww, wm, am}`; nullable-required: `iw`
+ * Required: `{i, a, wb, mr, px, aw, at, wm, am}`; nullable-required: `iw`
  * (wire `null` → SDK `undefined`).
  */
 export function parsePerpsSnapshotBalance(b: WireRecord): PerpsSnapshotBalance {
-  for (const key of ["i", "a", "wb", "mr", "px", "aw", "ww", "wm", "am"] as const) {
+  for (const key of ["i", "a", "wb", "mr", "px", "aw", "at", "wm", "am"] as const) {
     requireWireField(b, "parsePerpsSnapshotBalance", key);
   }
   return {
@@ -904,7 +904,7 @@ export function parsePerpsSnapshotBalance(b: WireRecord): PerpsSnapshotBalance {
     marginRatio: String(b.mr),
     oraclePrice: String(b.px),
     availableForMargin: String(b.aw),
-    availableForWithdraw: String(b.ww),
+    availableForWithdraw: String(b.at),
     walletMargin: String(b.wm),
     availableMargin: String(b.am),
     isolatedFrozen: optString(b, "iw"),
