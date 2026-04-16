@@ -745,6 +745,8 @@ export function parseSpotSnapshotOrder(o: WireRecord): SpotSnapshotOrder {
     executedValue: String(o.v),
     marginFrozen: String(o.M),
     funds: optString(o, "F"),
+    createdAt: optBigInt(o, "ct"),
+    updatedAt: optBigInt(o, "ut"),
   };
 }
 

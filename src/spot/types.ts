@@ -199,4 +199,8 @@ export interface SpotSnapshotOrder {
   marginFrozen: string;
   /** Original funds (wire `F`). `null` on the wire collapses to `undefined` for SDK style consistency. */
   funds?: string;
+  /** Order creation time in milliseconds (wire `ct`). Optional on WS pushes. */
+  createdAt?: bigint;
+  /** Order last-update time in milliseconds (wire `ut`). Optional on WS pushes. */
+  updatedAt?: bigint;
 }

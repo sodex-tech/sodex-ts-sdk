@@ -957,6 +957,8 @@ export function parsePerpsSnapshotOrder(o: WireRecord): PerpsSnapshotOrder {
     positionID: optBigInt(o, "pid"),
     primaryOrderID: optBigInt(o, "poid"),
     attachedOrderIDs: optBigIntArray(o, "parsePerpsSnapshotOrder", "aoids"),
+    createdAt: optBigInt(o, "ct"),
+    updatedAt: optBigInt(o, "ut"),
   };
 }
 
