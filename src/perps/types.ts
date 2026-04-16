@@ -362,6 +362,10 @@ export interface PerpsSnapshotOrder {
   primaryOrderID?: bigint;
   /** Order IDs of stops attached to this order (wire `aoids`). */
   attachedOrderIDs?: bigint[];
+  /** Order creation time in milliseconds (wire `ct`). Optional on WS pushes. */
+  createdAt?: bigint;
+  /** Order last-update time in milliseconds (wire `ut`). Optional on WS pushes. */
+  updatedAt?: bigint;
 }
 
 /**
