@@ -137,7 +137,18 @@ const PERPS_ACCOUNT_UPDATE_WIRE = {
   T: 1766847039189n,
   h: 2211n,
   B: [{ i: 0n, a: "vUSDC", wb: "999998045.21473685" }],
-  P: [{ i: 1n, s: "BTC-USD", sz: "1.5", ep: "50000", iw: null, ps: "BOTH" }],
+  P: [
+    {
+      i: 1n,
+      s: "BTC-USD",
+      sz: "1.5",
+      ep: "50000",
+      iw: null,
+      ps: "BOTH",
+      ct: 1776418125332,
+      ut: 1776418813658,
+    },
+  ],
 };
 
 const SPOT_ORDER_UPDATE_WIRE = {
@@ -349,6 +360,8 @@ describe("parseWsPerpsAccountUpdate", () => {
     expect(u.positions[0]!.size).toBe("1.5");
     expect(u.positions[0]!.positionSide).toBe("BOTH");
     expect(u.positions[0]!.isolatedMargin).toBeUndefined();
+    expect(u.positions[0]!.createdAt).toBe(1776418125332n);
+    expect(u.positions[0]!.updatedAt).toBe(1776418813658n);
   });
 });
 

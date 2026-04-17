@@ -414,6 +414,10 @@ export interface PerpsSnapshotPosition {
   liquidationPrice: string;
   /** Isolated margin (wire `iw`). Nullable on the wire for cross positions; SDK uses undefined. */
   isolatedMargin?: string;
+  /** Position creation time in milliseconds (wire `ct`). Optional on WS pushes. */
+  createdAt?: bigint;
+  /** Position last-update time in milliseconds (wire `ut`). Optional on WS pushes. */
+  updatedAt?: bigint;
 }
 
 /**

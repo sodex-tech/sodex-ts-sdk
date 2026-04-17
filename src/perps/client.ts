@@ -1005,6 +1005,8 @@ export function parsePerpsSnapshotPosition(p: WireRecord): PerpsSnapshotPosition
     leverage: Number(p.l),
     liquidationPrice: String(p.lp),
     isolatedMargin: optString(p, "iw"),
+    createdAt: optBigInt(p, "ct"),
+    updatedAt: optBigInt(p, "ut"),
   };
 }
 

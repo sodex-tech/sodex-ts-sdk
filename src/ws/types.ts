@@ -103,6 +103,10 @@ export interface WsPerpsPositionUpdate {
   avgEntryPrice: string;
   positionSide: PositionSide;
   isolatedMargin?: string;
+  /** Position creation time in milliseconds (wire `ct`). Optional on WS pushes. */
+  createdAt?: bigint;
+  /** Position last-update time in milliseconds (wire `ut`). Optional on WS pushes. */
+  updatedAt?: bigint;
 }
 
 // ---------------------------------------------------------------------------

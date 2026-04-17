@@ -7,7 +7,7 @@
 
 import { positionSideFromName } from "../../common/enums";
 import type { WireRecord } from "../../common/types";
-import { optString, parseWireArray, requireWireField } from "../../common/types";
+import { optBigInt, optString, parseWireArray, requireWireField } from "../../common/types";
 import type {
   WsPerpsAccountUpdate,
   WsPerpsBalanceUpdate,
@@ -65,6 +65,8 @@ function parsePerpsPositionUpdate(p: WireRecord): WsPerpsPositionUpdate {
     avgEntryPrice: String(p.ep),
     positionSide: positionSideFromName(p.ps),
     isolatedMargin: optString(p, "iw"),
+    createdAt: optBigInt(p, "ct"),
+    updatedAt: optBigInt(p, "ut"),
   };
 }
 
