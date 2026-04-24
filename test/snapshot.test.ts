@@ -337,6 +337,18 @@ describe("parsePerpsSnapshotPosition", () => {
     expect(pos.id).toBe(7n);
     expect(pos.isolatedMargin).toBeUndefined();
     expect(pos.leverage).toBe(10);
+    expect(pos.createdAt).toBeUndefined();
+    expect(pos.updatedAt).toBeUndefined();
+  });
+
+  it("maps optional ct/ut → createdAt/updatedAt as bigint", () => {
+    const pos = parsePerpsSnapshotPosition({
+      ...full(),
+      ct: 1776418125332,
+      ut: 1776418813658,
+    });
+    expect(pos.createdAt).toBe(1776418125332n);
+    expect(pos.updatedAt).toBe(1776418813658n);
   });
 
   it.each([

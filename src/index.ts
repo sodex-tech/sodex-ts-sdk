@@ -74,3 +74,20 @@ export type {
   TransferAssetInput,
 } from "./spot/actions";
 export { MAINNET_CHAIN_ID, TESTNET_CHAIN_ID } from "./common/eip712";
+
+export { SpotWsClient, PerpsWsClient, WsError, WsConnectionError, WsProtocolError } from "./ws";
+export type {
+  WsClientOptions,
+  WsLifecycleEvents,
+  WsOrderBook,
+  WsOrderBookUpdate,
+  WsSpotAccountUpdate,
+  WsPerpsAccountUpdate,
+  WsSpotOrderUpdate,
+  WsPerpsOrderUpdate,
+  WsSpotAccountTrade,
+  WsPerpsAccountTrade,
+  WsLiquidationEvent,
+  SpotAccountSubscribeOptions,
+  PerpsAccountSubscribeOptions,
+} from "./ws";

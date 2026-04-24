@@ -23,6 +23,10 @@ export interface BookTicker {
   bidSz: string;
   askPx: string;
   askSz: string;
+  /** WS-only: order book update sequence number (wire `u`). */
+  updateId?: bigint;
+  /** WS-only: event timestamp in milliseconds (wire `E`). */
+  eventTime?: bigint;
 }
 
 /**
@@ -53,8 +57,12 @@ export interface MiniTicker {
   lowPx: string;
   volume: string;
   quoteVolume: string;
-  openTime: bigint;
-  closeTime: bigint;
+  /** REST always provides; WS miniTicker channel does not. */
+  openTime?: bigint;
+  /** REST always provides; WS miniTicker channel does not. */
+  closeTime?: bigint;
+  /** WS-only: event timestamp in milliseconds (wire `E`). */
+  eventTime?: bigint;
 }
 
 /**
@@ -146,9 +154,10 @@ function toOrderBookLevels(raw: unknown, side: "bids" | "asks"): OrderBookLevel[
 }
 
 /**
- * Candle/kline bucket width. The REST server accepts the union below; note
- * that spot supports the full set while perps omits `8h`, `12h`, and `3D`.
- * Passing an unsupported interval to a given engine returns a server error.
+ * Candle/kline bucket width. The REST server accepts the union below. Case
+ * matters: minutes/hours/day/week are lowercase (`m`/`h`/`d`/`w`); month is
+ * uppercase `M` to avoid colliding with minute. `3d` is intentionally absent
+ * — neither engine accepts it.
  *
  * Source: sodex-docs/rest-v1/sodex-rest-{spot,perps}-api.md
  */
@@ -161,9 +170,8 @@ export type KlineInterval =
   | "4h"
   | "8h"
   | "12h"
-  | "1D"
-  | "3D"
-  | "1W"
+  | "1d"
+  | "1w"
   | "1M";
 
 /**
@@ -181,9 +189,8 @@ const KLINE_INTERVAL_MS: Partial<Record<KlineInterval, bigint>> = {
   "4h": 14_400_000n,
   "8h": 28_800_000n,
   "12h": 43_200_000n,
-  "1D": 86_400_000n,
-  "3D": 259_200_000n,
-  "1W": 604_800_000n,
+  "1d": 86_400_000n,
+  "1w": 604_800_000n,
 };
 
 /** Returns interval duration in milliseconds, or undefined for `1M`. */
@@ -205,6 +212,10 @@ export interface Kline {
   quoteVolume: string;
   /** Undefined when the server omits `n` — do not read as "zero trades". */
   tradeCount?: number;
+  /** WS-only: kline close time in milliseconds (wire `T`). */
+  closeTime?: bigint;
+  /** WS-only: whether this kline is closed (wire `x`). */
+  isClosed?: boolean;
 }
 
 /**
@@ -410,6 +421,8 @@ export interface Trade {
   buyerAccountId?: bigint;
   /** Seller account ID (wire `si`). Undefined when the server does not report it. */
   sellerAccountId?: bigint;
+  /** WS-only: event timestamp in milliseconds (wire `E`). */
+  eventTime?: bigint;
 }
 
 /**

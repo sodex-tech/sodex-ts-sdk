@@ -90,8 +90,8 @@ describe("parseKline", () => {
   it("klineIntervalMs returns fixed durations and undefined for 1M", () => {
     expect(klineIntervalMs("1m")).toBe(60_000n);
     expect(klineIntervalMs("1h")).toBe(3_600_000n);
-    expect(klineIntervalMs("1D")).toBe(86_400_000n);
-    expect(klineIntervalMs("1W")).toBe(604_800_000n);
+    expect(klineIntervalMs("1d")).toBe(86_400_000n);
+    expect(klineIntervalMs("1w")).toBe(604_800_000n);
     expect(klineIntervalMs("1M")).toBeUndefined();
   });
 });
