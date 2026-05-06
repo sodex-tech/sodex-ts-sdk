@@ -53,7 +53,7 @@ export function parseWsSpotOrderUpdate(raw: WireRecord): WsSpotOrderUpdate {
     lastPrice: optString(raw, "L"),
     fee: optString(raw, "n"),
     isMaker: optBoolean(raw, "parseWsSpotOrderUpdate", "m"),
-    rejectReason: optString(raw, "r"),
+    reason: optString(raw, "r"),
   };
 }
 

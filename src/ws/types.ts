@@ -136,7 +136,7 @@ export interface WsSpotOrderUpdate {
   lastPrice?: string;
   fee?: string;
   isMaker?: boolean;
-  rejectReason?: string;
+  reason?: string;
 }
 
 /** Perps order execution event — extends spot with perps-specific fields. */
