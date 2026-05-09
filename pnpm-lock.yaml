@@ -21,6 +21,9 @@ importers:
       '@types/node':
         specifier: ^20.12.0
         version: 20.19.39
+      '@types/ws':
+        specifier: ^8.5.13
+        version: 8.18.1
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(postcss@8.5.9)(tsx@4.21.0)(typescript@5.9.3)
@@ -36,6 +39,9 @@ importers:
       vitest:
         specifier: ^2.1.0
         version: 2.1.9(@types/node@20.19.39)
+      ws:
+        specifier: ^8.18.0
+        version: 8.18.3
 
 packages:
 
@@ -574,6 +580,9 @@ packages:
 
   '@types/node@20.19.39':
     resolution: {integrity: sha512-orrrD74MBUyK8jOAD/r0+lfa1I2MO6I+vAkmAWzMYbCcgrN4lCrmK52gRFQq/JRxfYPfonkr4b0jcY7Olqdqbw==}
+
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
   '@vitest/expect@2.1.9':
     resolution: {integrity: sha512-UJCIkTBenHeKT1TTlKMJWy1laZewsRIzYighyYiJKZreqtdxSos/S1t+ktRMQWu2CKqaarrkeszJx1cgC5tGZw==}
@@ -1314,6 +1323,10 @@ snapshots:
   '@types/node@20.19.39':
     dependencies:
       undici-types: 6.21.0
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 20.19.39
 
   '@vitest/expect@2.1.9':
     dependencies:

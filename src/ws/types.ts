@@ -12,6 +12,29 @@ import type {
 } from "../common";
 
 // ---------------------------------------------------------------------------
+// Push throttling
+// ---------------------------------------------------------------------------
+
+// The gateway accepts a `pushInterval` string (e.g. `"1000ms"`) on a subset
+// of channels, and only a discrete set of values per channel. The SDK
+// surfaces these as numeric-ms literal unions so misuse is caught at compile
+// time; the wire conversion happens inside the client.
+//
+// Channels NOT listed here (`bookTicker`, `allBookTicker`, `l4Book`, `trade`,
+// `accountUpdate`, `accountOrderUpdate`, `accountTrade`, `accountEvent`) do
+// not honor `pushInterval` server-side, so the SDK does not expose it on
+// those subscriptions.
+
+/** Allowed `pushInterval` values (ms) for ticker/miniTicker/markPrice family. */
+export type TickerPushIntervalMs = 1000 | 3000;
+
+/** Allowed `pushInterval` values (ms) for the `candle` channel. */
+export type CandlePushIntervalMs = 2000 | 5000;
+
+/** Allowed `pushInterval` values (ms) for `l2Book` and `accountState`. */
+export type BookPushIntervalMs = 500 | 1000 | 3000;
+
+// ---------------------------------------------------------------------------
 // Client options
 // ---------------------------------------------------------------------------
 

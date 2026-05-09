@@ -237,6 +237,22 @@ export class WsTransport {
   ): () => void {
     const fullParams = { channel, ...params };
     const key = subscriptionKey(channel, fullParams);
+    // Reject conflicting pushInterval on the same channel: incoming frames
+    // carry no pushInterval tag, so handleMessage routes by channel alone.
+    // Two active subs on the same channel with different pushIntervals
+    // would cross-deliver, silently breaking the throttle contract.
+    // `undefined` (server default cadence) is treated as a distinct value
+    // from any explicit interval — mixing default with explicit on one
+    // channel still cross-delivers.
+    const incomingInterval = params.pushInterval;
+    for (const existing of this.subscriptions.values()) {
+      if (existing.channel !== channel) continue;
+      const existingInterval = existing.params.pushInterval;
+      if (existingInterval === incomingInterval) continue;
+      throw new WsProtocolError(
+        `Conflicting pushInterval for channel "${channel}": existing=${String(existingInterval)}, new=${String(incomingInterval)}. Per connection, each channel supports a single pushInterval (omitted = server default).`,
+      );
+    }
     let sub = this.subscriptions.get(key);
     const isNew = !sub;
     if (!sub) {

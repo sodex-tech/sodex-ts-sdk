@@ -21,4 +21,7 @@ export type {
   WsLiquidationPosition,
   SpotAccountSubscribeOptions,
   PerpsAccountSubscribeOptions,
+  TickerPushIntervalMs,
+  CandlePushIntervalMs,
+  BookPushIntervalMs,
 } from "./types";
