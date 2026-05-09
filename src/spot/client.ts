@@ -169,10 +169,12 @@ export class SpotClient {
   async getKlines(
     symbol: SymbolRef,
     params: { interval: KlineInterval; startTime?: bigint; endTime?: bigint; limit?: number },
+    options?: { signal?: AbortSignal },
   ): Promise<Kline[]> {
     const name = await this.resolveWireName(symbol);
     const raw = await this.http.get<WireRecord[]>(`/markets/${encodeURIComponent(name)}/klines`, {
       query: { ...params },
+      signal: options?.signal,
     });
     return parseWireList(raw, "getKlines", (r) =>
       parseKline(r, { symbol: name, interval: params.interval }),
