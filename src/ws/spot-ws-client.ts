@@ -44,7 +44,10 @@ import {
 } from "./parsers";
 import { WsTransport, type WsState } from "./transport";
 import type {
+  BookPushIntervalMs,
+  CandlePushIntervalMs,
   SpotAccountSubscribeOptions,
+  TickerPushIntervalMs,
   WsClientOptions,
   WsLifecycleEvents,
   WsOrderBook,
@@ -82,41 +85,59 @@ export class SpotWsClient {
   // -----------------------------------------------------------------------
 
   subscribeTicker(
-    params: { symbols: string[] },
+    params: { symbols: string[]; pushIntervalMs?: TickerPushIntervalMs },
     cb: (ticker: SpotTicker) => void,
   ): () => void {
     const allowed = new Set(params.symbols);
-    return this.transport.subscribe("ticker", { symbols: params.symbols }, (data) => {
-      for (const item of toArray(data)) {
-        const rec = item as WireRecord;
-        if (allowed.has(String(rec.s))) cb(parseWsSpotTicker(rec));
-      }
-    });
+    return this.transport.subscribe(
+      "ticker",
+      { symbols: params.symbols, pushInterval: pushIntervalToWire(params.pushIntervalMs) },
+      (data) => {
+        for (const item of toArray(data)) {
+          const rec = item as WireRecord;
+          if (allowed.has(String(rec.s))) cb(parseWsSpotTicker(rec));
+        }
+      },
+    );
   }
 
-  subscribeAllTickers(cb: (tickers: SpotTicker[]) => void): () => void {
-    return this.transport.subscribe("allTicker", {}, (data) => {
-      cb(toArray(data).map((d) => parseWsSpotTicker(d as WireRecord)));
-    });
+  subscribeAllTickers(
+    cb: (tickers: SpotTicker[]) => void,
+    opts?: { pushIntervalMs?: TickerPushIntervalMs },
+  ): () => void {
+    return this.transport.subscribe(
+      "allTicker",
+      { pushInterval: pushIntervalToWire(opts?.pushIntervalMs) },
+      (data) => { cb(toArray(data).map((d) => parseWsSpotTicker(d as WireRecord))); },
+    );
   }
 
   subscribeMiniTicker(
-    params: { symbols: string[] },
+    params: { symbols: string[]; pushIntervalMs?: TickerPushIntervalMs },
     cb: (ticker: MiniTicker) => void,
   ): () => void {
     const allowed = new Set(params.symbols);
-    return this.transport.subscribe("miniTicker", { symbols: params.symbols }, (data) => {
-      for (const item of toArray(data)) {
-        const rec = item as WireRecord;
-        if (allowed.has(String(rec.s))) cb(parseWsMiniTicker(rec));
-      }
-    });
+    return this.transport.subscribe(
+      "miniTicker",
+      { symbols: params.symbols, pushInterval: pushIntervalToWire(params.pushIntervalMs) },
+      (data) => {
+        for (const item of toArray(data)) {
+          const rec = item as WireRecord;
+          if (allowed.has(String(rec.s))) cb(parseWsMiniTicker(rec));
+        }
+      },
+    );
   }
 
-  subscribeAllMiniTickers(cb: (tickers: MiniTicker[]) => void): () => void {
-    return this.transport.subscribe("allMiniTicker", {}, (data) => {
-      cb(toArray(data).map((d) => parseWsMiniTicker(d as WireRecord)));
-    });
+  subscribeAllMiniTickers(
+    cb: (tickers: MiniTicker[]) => void,
+    opts?: { pushIntervalMs?: TickerPushIntervalMs },
+  ): () => void {
+    return this.transport.subscribe(
+      "allMiniTicker",
+      { pushInterval: pushIntervalToWire(opts?.pushIntervalMs) },
+      (data) => { cb(toArray(data).map((d) => parseWsMiniTicker(d as WireRecord))); },
+    );
   }
 
   subscribeBookTicker(
@@ -139,13 +160,17 @@ export class SpotWsClient {
   }
 
   subscribeL2Book(
-    params: { symbol: string; tickSize: string },
+    params: { symbol: string; tickSize: string; pushIntervalMs?: BookPushIntervalMs },
     cb: (book: WsOrderBook) => void,
   ): () => void {
     const sym = params.symbol;
     return this.transport.subscribe(
       "l2Book",
-      { symbol: sym, tickSize: params.tickSize },
+      {
+        symbol: sym,
+        tickSize: params.tickSize,
+        pushInterval: pushIntervalToWire(params.pushIntervalMs),
+      },
       (data) => { cb(parseWsOrderBook(data as WireRecord)); },
       (data) => String((data as WireRecord).s) === sym,
     );
@@ -169,14 +194,18 @@ export class SpotWsClient {
   }
 
   subscribeCandle(
-    params: { symbol: string; interval: KlineInterval },
+    params: { symbol: string; interval: KlineInterval; pushIntervalMs?: CandlePushIntervalMs },
     cb: (kline: Kline) => void,
   ): () => void {
     const sym = params.symbol;
     const ivl = params.interval;
     return this.transport.subscribe(
       "candle",
-      { symbol: sym, interval: ivl },
+      {
+        symbol: sym,
+        interval: ivl,
+        pushInterval: pushIntervalToWire(params.pushIntervalMs),
+      },
       (data) => { cb(parseWsCandle(data as WireRecord)); },
       (data) => {
         const rec = data as WireRecord;
@@ -212,7 +241,14 @@ export class SpotWsClient {
    * Returns a single unsubscribe function that tears down all channels.
    */
   subscribeAccountState(
-    params: { user: string; symbols?: string[] },
+    params: {
+      user: string;
+      symbols?: string[];
+      /** Push throttling for the `accountState` snapshot stream only.
+       *  Granular event channels (`accountUpdate`, `accountOrderUpdate`,
+       *  `accountTrade`) do not honor `pushInterval` server-side. */
+      pushIntervalMs?: BookPushIntervalMs;
+    },
     onSnapshot: (snapshot: SpotAccountSnapshot) => void,
     opts?: SpotAccountSubscribeOptions,
   ): () => void {
@@ -231,9 +267,11 @@ export class SpotWsClient {
 
     // Always subscribe to accountState
     unsubs.push(
-      this.transport.subscribe("accountState", { user: params.user }, (data) => {
-        onSnapshot(parseSpotAccountSnapshot(data as WireRecord));
-      }),
+      this.transport.subscribe(
+        "accountState",
+        { user: params.user, pushInterval: pushIntervalToWire(params.pushIntervalMs) },
+        (data) => { onSnapshot(parseSpotAccountSnapshot(data as WireRecord)); },
+      ),
     );
 
     if (opts?.onBalanceUpdate) {
@@ -293,4 +331,9 @@ function toArray(data: unknown): unknown[] {
 /** Normalize `https://` → `wss://`, strip trailing slash. */
 function toWsUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, "").replace(/^https:\/\//, "wss://");
+}
+
+/** Convert a numeric ms to the gateway's `"<n>ms"` wire form, or undefined. */
+function pushIntervalToWire(ms: number | undefined): string | undefined {
+  return ms === undefined ? undefined : `${ms}ms`;
 }

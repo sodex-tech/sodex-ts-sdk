@@ -90,4 +90,7 @@ export type {
   WsLiquidationEvent,
   SpotAccountSubscribeOptions,
   PerpsAccountSubscribeOptions,
+  TickerPushIntervalMs,
+  CandlePushIntervalMs,
+  BookPushIntervalMs,
 } from "./ws";
