@@ -31,7 +31,33 @@ function addressFromUncompressedPubkey(pub: Uint8Array): string {
   return bytesToHex(hash.subarray(12));
 }
 
-export class EvmSigner {
+/**
+ * Abstract signer interface for ExchangeAction signing.
+ *
+ * Two built-in implementations:
+ * - `EvmSigner` (and its `SpotSigner` / `PerpsSigner` subclasses) — local
+ *   private-key holder; produces wire signatures synchronously.
+ * - `TypedDataSigner` — adapter for external EIP-712 signers (Privy,
+ *   wagmi, viem, ethers, WalletConnect, hardware wallets) that expose a
+ *   `signTypedData` callback but never reveal the private key.
+ *
+ * The interface is intentionally minimal: it only commits to "produce a
+ * 66-byte wire sig for this (payload, nonce)". Domain/chainId binding is
+ * an implementation detail, set at construction time.
+ */
+export interface Signer {
+  /** Lowercase 0x-prefixed 20-byte hex address that recovers from `sign()` output. */
+  readonly address: string;
+
+  /**
+   * Sign an ExchangeAction and return the 66-byte wire signature.
+   * Async to accommodate wallet RPC round-trips; local-key implementations
+   * may resolve synchronously.
+   */
+  sign(payload: ActionPayload, nonce: bigint): Promise<Uint8Array>;
+}
+
+export class EvmSigner implements Signer {
   constructor(
     public readonly domain: Eip712Domain,
     private readonly privateKey: Uint8Array,
@@ -41,11 +67,20 @@ export class EvmSigner {
     return addressFromPrivateKey(this.privateKey);
   }
 
+  /**
+   * Synchronous local-key signing path. Kept stable for callers that hold
+   * an `EvmSigner` directly (tests, deterministic CLIs); `Signer.sign` is
+   * the interface SDK clients consume.
+   */
   signAction(payload: ActionPayload, nonce: bigint): Uint8Array {
     const payloadHash = hashActionPayload(payload);
     const structHash = exchangeActionStructHash(payloadHash, nonce);
     const digest = eip712Digest(this.domain, structHash);
     return signDigest(digest, this.privateKey, SIG_TYPE_EIP712);
+  }
+
+  async sign(payload: ActionPayload, nonce: bigint): Promise<Uint8Array> {
+    return this.signAction(payload, nonce);
   }
 
   recoverAddress(payload: ActionPayload, nonce: bigint, wireSig: Uint8Array): string {

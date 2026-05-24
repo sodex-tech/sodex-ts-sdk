@@ -8,7 +8,14 @@ export {
   recoverAddress,
   signDigest,
   type PrivateKeyInput,
+  type Signer,
 } from "../common/signer";
+export { TypedDataSigner, wireSigFromExternal } from "../common/typed-data-signer";
+export type {
+  Eip712TypedData,
+  SignTypedDataFn,
+  TypedDataSignerOptions,
+} from "../common/typed-data-signer";
 export { signAddApiKey, recoverAddApiKeyAddress } from "../common/add-api-key-signer";
 export {
   MAINNET_CHAIN_ID,

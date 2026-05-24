@@ -22,7 +22,7 @@ import {
   triggerTypeFromName,
 } from "../common/enums";
 import { HttpClient } from "../common/http";
-import { SIG_TYPE_ADD_API_KEY, signDigest } from "../common/signer";
+import { SIG_TYPE_ADD_API_KEY, type Signer, signDigest } from "../common/signer";
 import {
   type ApiKeyInfo,
   type BatchCancelReceipt,
@@ -82,7 +82,6 @@ import {
   buildUpdateLeveragePayload,
   buildUpdateMarginPayload,
 } from "./actions";
-import type { PerpsSigner } from "./signer";
 import type {
   FundingPayment,
   MarkPriceTicker,
@@ -106,7 +105,12 @@ const autoTransferId = createMonotonicNonce();
 export interface PerpsClientOptions {
   baseUrl: string;
   chainId?: bigint;
-  signer?: PerpsSigner;
+  /**
+   * Action signer. Accepts any `Signer` implementation — `PerpsSigner`
+   * for local-key signing, `TypedDataSigner` for wallet flows (Privy,
+   * viem, ethers, WalletConnect, hardware wallets).
+   */
+  signer?: Signer;
   apiKeyName?: string;
   fetch?: typeof fetch;
   nonce?: NonceProvider;
@@ -119,7 +123,7 @@ export class PerpsClient {
   readonly symbols: SymbolRegistry;
   readonly coins: CoinRegistry;
   readonly chainId: bigint;
-  private readonly signer?: PerpsSigner;
+  private readonly signer?: Signer;
   private readonly apiKeyName: string;
   private readonly nonce: NonceProvider;
 
@@ -542,7 +546,7 @@ export class PerpsClient {
       throw new Error("PerpsClient: signer not configured — pass `signer` in constructor options");
     }
     const nonce = this.nonce();
-    const wireSig = this.signer.signAction(payload, nonce);
+    const wireSig = await this.signer.sign(payload, nonce);
     const bodyText = payloadBody(payload);
     const opts = {
       bodyText,
