@@ -74,6 +74,13 @@ export type {
   TransferAssetInput,
 } from "./spot/actions";
 export { MAINNET_CHAIN_ID, TESTNET_CHAIN_ID } from "./common/eip712";
+export type { Signer } from "./common/signer";
+export { TypedDataSigner, wireSigFromExternal } from "./common/typed-data-signer";
+export type {
+  Eip712TypedData,
+  SignTypedDataFn,
+  TypedDataSignerOptions,
+} from "./common/typed-data-signer";
 
 export { SpotWsClient, PerpsWsClient, WsError, WsConnectionError, WsProtocolError } from "./ws";
 export type {

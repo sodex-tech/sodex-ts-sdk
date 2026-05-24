@@ -18,7 +18,7 @@ import {
   timeInForceFromName,
 } from "../common/enums";
 import { HttpClient } from "../common/http";
-import { SIG_TYPE_ADD_API_KEY, signDigest } from "../common/signer";
+import { SIG_TYPE_ADD_API_KEY, type Signer, signDigest } from "../common/signer";
 import {
   type ApiKeyInfo,
   type BatchCancelReceipt,
@@ -71,7 +71,6 @@ import {
   buildTransferAssetPayload,
 } from "./actions";
 import { type NonceProvider, createMonotonicNonce } from "../common/nonce";
-import type { SpotSigner } from "./signer";
 import type {
   SpotAccountBalances,
   SpotCoinInfo,
@@ -88,7 +87,12 @@ const autoTransferId = createMonotonicNonce();
 export interface SpotClientOptions {
   baseUrl: string;
   chainId?: bigint;
-  signer?: SpotSigner;
+  /**
+   * Action signer. Accepts any `Signer` implementation — `SpotSigner` for
+   * local-key signing, `TypedDataSigner` for wallet flows (Privy, viem,
+   * ethers, WalletConnect, hardware wallets).
+   */
+  signer?: Signer;
   apiKeyName?: string;
   fetch?: typeof fetch;
   nonce?: NonceProvider;
@@ -101,7 +105,7 @@ export class SpotClient {
   readonly symbols: SymbolRegistry;
   readonly coins: CoinRegistry;
   readonly chainId: bigint;
-  private readonly signer?: SpotSigner;
+  private readonly signer?: Signer;
   private readonly apiKeyName: string;
   private readonly nonce: NonceProvider;
 
@@ -461,7 +465,7 @@ export class SpotClient {
       throw new Error("SpotClient: signer not configured — pass `signer` in constructor options");
     }
     const nonce = this.nonce();
-    const wireSig = this.signer.signAction(payload, nonce);
+    const wireSig = await this.signer.sign(payload, nonce);
     const bodyText = payloadBody(payload);
     const opts = {
       bodyText,
