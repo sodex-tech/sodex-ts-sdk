@@ -186,12 +186,17 @@ describe("parsePerpsSnapshotBalance", () => {
       availableForWithdraw: "800",
       walletMargin: "100",
       availableMargin: "700",
+      collateral: undefined,
       isolatedFrozen: undefined,
     });
   });
 
   it("surfaces iw string when present", () => {
     expect(parsePerpsSnapshotBalance({ ...full(), iw: "200" }).isolatedFrozen).toBe("200");
+  });
+
+  it("surfaces co string (collateral) when present", () => {
+    expect(parsePerpsSnapshotBalance({ ...full(), co: "0.001" }).collateral).toBe("0.001");
   });
 
   it.each(["i", "a", "wb", "mr", "px", "aw", "at", "wm", "am"] as const)(

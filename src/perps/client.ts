@@ -913,6 +913,7 @@ export function parsePerpsSnapshotBalance(b: WireRecord): PerpsSnapshotBalance {
     availableForWithdraw: String(b.at),
     walletMargin: String(b.wm),
     availableMargin: String(b.am),
+    collateral: optString(b, "co"),
     isolatedFrozen: optString(b, "iw"),
   };
 }
