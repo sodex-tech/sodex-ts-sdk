@@ -2,6 +2,7 @@ export { parseWsSpotTicker, parseWsPerpsTicker } from "./ticker";
 export { parseWsMiniTicker } from "./mini-ticker";
 export { parseWsBookTicker } from "./book-ticker";
 export { parseWsMarkPrice } from "./mark-price";
+export { parseWsCoinPrice } from "./coin-price";
 export { parseWsOrderBook, parseWsOrderBookUpdate } from "./order-book";
 export { parseWsCandle } from "./candle";
 export { parseWsTrade } from "./trade";

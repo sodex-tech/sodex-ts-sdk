@@ -21,9 +21,12 @@ import type {
 // time; the wire conversion happens inside the client.
 //
 // Channels NOT listed here (`bookTicker`, `allBookTicker`, `l4Book`, `trade`,
-// `accountUpdate`, `accountOrderUpdate`, `accountTrade`, `accountEvent`) do
-// not honor `pushInterval` server-side, so the SDK does not expose it on
-// those subscriptions.
+// `coinPrice`, `allCoinPrice`, `accountUpdate`, `accountOrderUpdate`,
+// `accountTrade`, `accountEvent`) do not honor `pushInterval` server-side, so
+// the SDK does not expose it on those subscriptions. (`coinPrice` /
+// `allCoinPrice` push on each block, at most once per second when the price or
+// margin ratio changes — that cadence is server-controlled, not a client
+// `pushInterval`.)
 
 /** Allowed `pushInterval` values (ms) for ticker/miniTicker/markPrice family. */
 export type TickerPushIntervalMs = 1000 | 3000;
@@ -83,6 +86,30 @@ export interface WsOrderBookUpdate {
   eventTime: bigint;
   bids: OrderBookLevel[];
   asks: OrderBookLevel[];
+}
+
+// ---------------------------------------------------------------------------
+// Coin price (WS `coinPrice` / `allCoinPrice` channels, perps only)
+// ---------------------------------------------------------------------------
+
+/**
+ * Oracle coin price + margin ratio update (WS `coinPrice` / `allCoinPrice`
+ * channels, perps only). Wire shape: `{i, a, p, mr, E}` — all fields required.
+ *
+ * The REST equivalent is `PerpsClient.getCoins()` (`PerpsCoinInfo`); this is
+ * the streaming counterpart, keyed per coin rather than per symbol.
+ */
+export interface WsCoinPrice {
+  /** Coin ID (wire `i`). */
+  coinId: bigint;
+  /** Coin name, e.g. `vBTC` (wire `a`). */
+  coin: string;
+  /** Current oracle coin price (wire `p`). */
+  price: string;
+  /** Current margin ratio of this coin (wire `mr`). */
+  marginRatio: string;
+  /** Event timestamp in milliseconds (wire `E`). */
+  eventTime: bigint;
 }
 
 // ---------------------------------------------------------------------------
