@@ -316,6 +316,12 @@ export interface PerpsSnapshotBalance {
   walletMargin: string;
   /** Available wallet balance corresponding margin (wire `am`). */
   availableMargin: string;
+  /**
+   * Amount of this coin counted as margin collateral (wire `co`).
+   * `walletBalance − collateral` is the idle/over-cap portion.
+   * Optional: absent on gateways predating multi-asset margin.
+   */
+  collateral?: string;
   /** Isolated frozen margin for position or open orders (wire `iw`, only for vUSDC). */
   isolatedFrozen?: string;
 }
