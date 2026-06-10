@@ -7,6 +7,7 @@ export type {
   WsLifecycleEvents,
   WsOrderBook,
   WsOrderBookUpdate,
+  WsCoinPrice,
   WsSpotAccountUpdate,
   WsSpotBalanceUpdate,
   WsPerpsAccountUpdate,

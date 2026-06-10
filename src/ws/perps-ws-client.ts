@@ -20,6 +20,7 @@ import {
   parsePerpsAccountSnapshot,
   parseWsBookTicker,
   parseWsCandle,
+  parseWsCoinPrice,
   parseWsLiquidationEvent,
   parseWsMarkPrice,
   parseWsMiniTicker,
@@ -40,6 +41,7 @@ import type {
   TickerPushIntervalMs,
   WsClientOptions,
   WsLifecycleEvents,
+  WsCoinPrice,
   WsOrderBook,
   WsOrderBookUpdate,
 } from "./types";
@@ -176,6 +178,40 @@ export class PerpsWsClient {
       { pushInterval: pushIntervalToWire(opts?.pushIntervalMs) },
       (data) => { cb(toArray(data).map((d) => parseWsMarkPrice(d as WireRecord))); },
     );
+  }
+
+  /**
+   * Subscribe to oracle coin price + margin ratio for specific coins
+   * (`coinPrice` channel, perps only). Identify coins by name, e.g. `vBTC`.
+   *
+   * The stream pushes a snapshot followed by updates; the callback fires once
+   * per coin record in each frame. Server cadence is at most once per second
+   * per block and only when price or margin ratio changes — there is no
+   * client `pushInterval`.
+   */
+  subscribeCoinPrice(
+    params: { coins: string[] },
+    cb: (price: WsCoinPrice) => void,
+  ): () => void {
+    const allowed = new Set(params.coins);
+    return this.transport.subscribe("coinPrice", { coins: params.coins }, (data) => {
+      for (const item of toArray(data)) {
+        const rec = item as WireRecord;
+        if (allowed.has(String(rec.a))) cb(parseWsCoinPrice(rec));
+      }
+    });
+  }
+
+  /**
+   * Subscribe to oracle coin price + margin ratio for all coins
+   * (`allCoinPrice` channel, perps only). Each update frame contains only the
+   * coins whose price or margin ratio changed, so the callback receives a
+   * partial list per push (the initial snapshot carries every coin).
+   */
+  subscribeAllCoinPrices(cb: (prices: WsCoinPrice[]) => void): () => void {
+    return this.transport.subscribe("allCoinPrice", {}, (data) => {
+      cb(toArray(data).map((d) => parseWsCoinPrice(d as WireRecord)));
+    });
   }
 
   subscribeL2Book(

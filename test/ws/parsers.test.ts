@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseWsBookTicker,
   parseWsCandle,
+  parseWsCoinPrice,
   parseWsLiquidationEvent,
   parseWsMarkPrice,
   parseWsMiniTicker,
@@ -71,6 +72,14 @@ const MARK_PRICE_WIRE = {
   i: "107702.323374",
   r: "0.0000125",
   T: 1766851200000n,
+};
+
+const COIN_PRICE_WIRE = {
+  E: 1781104149800n,
+  i: 1n,
+  a: "vBTC",
+  p: "61984.5",
+  mr: "0.9",
 };
 
 const ORDER_BOOK_WIRE = {
@@ -282,6 +291,22 @@ describe("parseWsMarkPrice", () => {
     expect(t.nextFundingTime).toBe(1766851200000n);
     expect(t.openInterest).toBe("0");
     expect(t.eventTime).toBe(1766850625430n);
+  });
+});
+
+describe("parseWsCoinPrice", () => {
+  it("parses all fields", () => {
+    const c = parseWsCoinPrice(COIN_PRICE_WIRE);
+    expect(c.coinId).toBe(1n);
+    expect(c.coin).toBe("vBTC");
+    expect(c.price).toBe("61984.5");
+    expect(c.marginRatio).toBe("0.9");
+    expect(c.eventTime).toBe(1781104149800n);
+  });
+
+  it("throws when a required field is missing", () => {
+    const { p: _p, ...missingPrice } = COIN_PRICE_WIRE;
+    expect(() => parseWsCoinPrice(missingPrice)).toThrow();
   });
 });
 
