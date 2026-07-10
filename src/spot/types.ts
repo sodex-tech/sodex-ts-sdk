@@ -1,4 +1,5 @@
 import type { OrderSide, OrderStatus, OrderType, SymbolStatus, TimeInForce } from "../common/enums";
+import type { WsTwapOrder } from "../ws/types";
 
 /**
  * Spot symbol metadata. Wire shape:
@@ -148,6 +149,8 @@ export interface SpotAccountSnapshot {
   balances: SpotSnapshotBalance[];
   /** Latest up-to-100 open orders (wire `O`). Empty when the server sends `null`. */
   openOrders: SpotSnapshotOrder[];
+  /** Active TWAP orders (wire `TO`). Empty when the server sends `null`. */
+  twaps: WsTwapOrder[];
 }
 
 /**

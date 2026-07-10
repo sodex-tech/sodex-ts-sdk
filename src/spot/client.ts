@@ -18,8 +18,10 @@ import {
   timeInForceFromName,
 } from "../common/enums";
 import { HttpClient } from "../common/http";
+import { type NonceProvider, createMonotonicNonce } from "../common/nonce";
 import { SIG_TYPE_ADD_API_KEY, type Signer, signDigest } from "../common/signer";
 import {
+  type AccountTwapOrders,
   type ApiKeyInfo,
   type BatchCancelReceipt,
   type BatchOrderReceipt,
@@ -33,8 +35,12 @@ import {
   type PlaceOrderReceipt,
   type Trade,
   type TransferReceipt,
+  type TwapOrderReceipt,
   type UserTrade,
   type WireRecord,
+  optBigInt,
+  optString,
+  parseAccountTwapOrders,
   parseApiKey,
   parseBatchCancelReceipt,
   parseBatchOrderReceipt as parseBatchReceipt,
@@ -45,16 +51,19 @@ import {
   parseMiniTicker,
   parseOrderBook,
   parseTrade,
+  parseTwapOrderReceipt,
   parseUserTrade,
-  optBigInt,
-  optString,
   parseWireArray,
   parseWireList,
   requireWireField,
 } from "../common/types";
 import { CoinRegistry } from "../registry/coin-registry";
 import { type SymbolRef, SymbolRegistry } from "../registry/symbol-registry";
+// Import from the specific file (not the ../ws/parsers barrel) to avoid a
+// cycle: ws/parsers/index -> account-state -> spot/client.
+import { parseWsTwapOrder } from "../ws/parsers/twap-order";
 import {
+  type CancelTwapOrderInput,
   type ReplaceOrderInput,
   type RevokeApiKeyInput,
   type ScheduleCancelInput,
@@ -62,22 +71,24 @@ import {
   type SpotBatchNewOrderInput,
   type SpotCancelOrderInput,
   type SpotNewOrderInput,
+  type SpotNewTwapOrderInput,
   type TransferAssetInput,
   buildBatchCancelPayload,
   buildBatchNewOrderPayload,
+  buildCancelTwapPayload,
   buildReplaceOrderPayload,
   buildRevokeApiKeyPayload,
   buildScheduleCancelPayload,
   buildTransferAssetPayload,
+  buildTwapOrderPayload,
 } from "./actions";
-import { type NonceProvider, createMonotonicNonce } from "../common/nonce";
 import type {
   SpotAccountBalances,
+  SpotAccountSnapshot,
   SpotCoinInfo,
+  SpotOrder,
   SpotSnapshotBalance,
   SpotSnapshotOrder,
-  SpotAccountSnapshot,
-  SpotOrder,
   SpotSymbolInfo,
   SpotTicker,
 } from "./types";
@@ -127,7 +138,6 @@ export class SpotClient {
   async refreshMarkets(): Promise<void> {
     await Promise.all([this.symbols.refresh(), this.coins.refresh()]);
   }
-
 
   async getSymbols(symbol?: string): Promise<SpotSymbolInfo[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/symbols", {
@@ -192,7 +202,6 @@ export class SpotClient {
     });
     return parseWireList(raw, "getRecentTrades", parseTrade);
   }
-
 
   async getBalances(userAddress: string, accountId?: bigint): Promise<SpotAccountBalances> {
     const raw = await this.http.get<any>(`/accounts/${userAddress}/balances`, {
@@ -299,7 +308,6 @@ export class SpotClient {
     return parseWireList(raw, "getUserTrades", parseUserTrade);
   }
 
-
   async placeOrder(
     input: Omit<SpotNewOrderInput, "symbolId"> & { symbol: SymbolRef },
   ): Promise<PlaceOrderReceipt> {
@@ -360,6 +368,37 @@ export class SpotClient {
     });
     const raw = await this.signedDelete<any[]>("/trade/orders/batch", payload);
     return raw.map(parseBatchCancelReceipt);
+  }
+
+  async placeTwapOrder(
+    input: Omit<SpotNewTwapOrderInput, "symbolId"> & { symbol: SymbolRef },
+  ): Promise<TwapOrderReceipt> {
+    const { symbol, ...rest } = input;
+    const payload = buildTwapOrderPayload({ ...rest, symbolId: this.symbols.resolveId(symbol) });
+    const raw = await this.signedPost<WireRecord>("/trade/twaps", payload);
+    return parseTwapOrderReceipt(raw);
+  }
+
+  async cancelTwapOrder(
+    input: Omit<CancelTwapOrderInput, "symbolId"> & { symbol: SymbolRef },
+  ): Promise<TwapOrderReceipt> {
+    const { symbol, ...rest } = input;
+    const payload = buildCancelTwapPayload({ ...rest, symbolId: this.symbols.resolveId(symbol) });
+    const raw = await this.signedDelete<WireRecord>("/trade/twaps", payload);
+    return parseTwapOrderReceipt(raw);
+  }
+
+  async getTwapOrders(
+    userAddress: string,
+    params: { symbol?: string; accountId?: bigint } = {},
+  ): Promise<AccountTwapOrders> {
+    const raw = await this.http.get<WireRecord>(`/accounts/${userAddress}/twaps`, {
+      query: {
+        symbol: await this.normalizeSymbolFilter(params.symbol),
+        accountID: params.accountId,
+      },
+    });
+    return parseAccountTwapOrders(raw);
   }
 
   async replaceOrders(
@@ -447,7 +486,6 @@ export class SpotClient {
     });
   }
 
-
   private async signedPost<T>(path: string, payload: ActionPayload): Promise<T> {
     return this.sign("POST", path, payload);
   }
@@ -504,7 +542,6 @@ export class SpotClient {
     return this.getCoins();
   }
 }
-
 
 /**
  * Parse `SpotSymbol` from wire (sodex-docs/rest-v1/schema.md#spotsymbol).
@@ -699,6 +736,7 @@ export function parseSpotAccountSnapshot(raw: WireRecord): SpotAccountSnapshot {
     userId: BigInt(raw.uid),
     balances: parseWireArray(raw, "parseSpotAccountSnapshot", "B", parseSpotSnapshotBalance),
     openOrders: parseWireArray(raw, "parseSpotAccountSnapshot", "O", parseSpotSnapshotOrder),
+    twaps: parseWireArray(raw, "parseSpotAccountSnapshot", "TO", parseWsTwapOrder),
   };
 }
 
@@ -781,8 +819,7 @@ export function parseSpotOrder(raw: WireRecord): SpotOrder {
     executedValue: String(raw.executedValue),
     marginFrozen: String(raw.marginFrozen),
     clOrdID: optString(raw, "clOrdID"),
-    timeInForce:
-      tif === undefined || tif === null ? undefined : timeInForceFromName(tif),
+    timeInForce: tif === undefined || tif === null ? undefined : timeInForceFromName(tif),
     price: optString(raw, "price"),
     origQty: optString(raw, "origQty"),
     funds: optString(raw, "funds"),
@@ -790,4 +827,3 @@ export function parseSpotOrder(raw: WireRecord): SpotOrder {
     updatedAt: optBigInt(raw, "updatedAt"),
   };
 }
-

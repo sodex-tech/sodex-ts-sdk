@@ -15,6 +15,7 @@ import type {
   WsSpotAccountUpdate,
   WsSpotBalanceUpdate,
 } from "../types";
+import { parseWsTwapOrder } from "./twap-order";
 
 function parseSpotBalanceUpdate(b: WireRecord): WsSpotBalanceUpdate {
   requireWireField(b, "parseSpotBalanceUpdate", "i");
@@ -38,6 +39,7 @@ export function parseWsSpotAccountUpdate(raw: WireRecord): WsSpotAccountUpdate {
     blockTime: BigInt(raw.T),
     blockHeight: BigInt(raw.h),
     balances: parseWireArray(raw, "parseWsSpotAccountUpdate", "B", parseSpotBalanceUpdate),
+    twaps: parseWireArray(raw, "parseWsSpotAccountUpdate", "TO", parseWsTwapOrder),
   };
 }
 
@@ -80,5 +82,6 @@ export function parseWsPerpsAccountUpdate(raw: WireRecord): WsPerpsAccountUpdate
     blockHeight: BigInt(raw.h),
     balances: parseWireArray(raw, "parseWsPerpsAccountUpdate", "B", parsePerpsBalanceUpdate),
     positions: parseWireArray(raw, "parseWsPerpsAccountUpdate", "P", parsePerpsPositionUpdate),
+    twaps: parseWireArray(raw, "parseWsPerpsAccountUpdate", "TO", parseWsTwapOrder),
   };
 }

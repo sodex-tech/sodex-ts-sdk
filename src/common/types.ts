@@ -145,9 +145,7 @@ function toOrderBookLevels(raw: unknown, side: "bids" | "asks"): OrderBookLevel[
   }
   return raw.map((l, i) => {
     if (!Array.isArray(l) || l.length !== 2) {
-      throw new Error(
-        `parseOrderBook: ${side}[${i}] must be a [price, size] tuple of length 2`,
-      );
+      throw new Error(`parseOrderBook: ${side}[${i}] must be a [price, size] tuple of length 2`);
     }
     return { price: String(l[0]), size: String(l[1]) };
   });
@@ -307,11 +305,7 @@ export function optBigInt(raw: WireRecord, key: string): bigint | undefined {
  * Returns `undefined` when the field is missing or `null`; throws when the
  * field is present but not an array (schema drift).
  */
-export function optBigIntArray(
-  raw: WireRecord,
-  parser: string,
-  key: string,
-): bigint[] | undefined {
+export function optBigIntArray(raw: WireRecord, parser: string, key: string): bigint[] | undefined {
   const v = raw[key];
   if (v === undefined || v === null) return undefined;
   if (!Array.isArray(v)) {
@@ -447,10 +441,8 @@ export function parseTrade(raw: WireRecord): Trade {
     side: orderSideFromName(raw.S),
     price: String(raw.p),
     quantity: String(raw.q),
-    buyerAccountId:
-      raw.bi === undefined || raw.bi === null ? undefined : BigInt(raw.bi),
-    sellerAccountId:
-      raw.si === undefined || raw.si === null ? undefined : BigInt(raw.si),
+    buyerAccountId: raw.bi === undefined || raw.bi === null ? undefined : BigInt(raw.bi),
+    sellerAccountId: raw.si === undefined || raw.si === null ? undefined : BigInt(raw.si),
   };
 }
 
@@ -615,6 +607,92 @@ export function parseUserTrade(raw: WireRecord): UserTrade {
     feeCoin: optString(raw, "feeCoin"),
     isMaker: optBoolean(raw, "parseUserTrade", "isMaker"),
   };
+}
+
+/**
+ * REST TWAP order (query result). Wire shape: `TwapOrder` per
+ * sodex-docs/rest-v1/schema.md `#twaporder` (15 fields, all required).
+ * Distinct from the WS `WsTwapOrder` shape — do not merge parsers.
+ */
+export interface TwapOrder {
+  userId: bigint;
+  accountId: bigint;
+  symbol: string;
+  symbolId: bigint;
+  orderId: bigint;
+  quantity: string;
+  side: OrderSide;
+  /** TWAP duration in minutes. */
+  minutes: bigint;
+  randomize: boolean;
+  reduceOnly: boolean;
+  executedQty: string;
+  executedValue: string;
+  createdAt: bigint;
+  nextActiveAt: bigint;
+  active: boolean;
+}
+
+export function parseTwapOrder(raw: WireRecord): TwapOrder {
+  requireWireField(raw, "parseTwapOrder", "userID");
+  requireWireField(raw, "parseTwapOrder", "accountID");
+  requireWireField(raw, "parseTwapOrder", "symbol");
+  requireWireField(raw, "parseTwapOrder", "symbolID");
+  requireWireField(raw, "parseTwapOrder", "orderID");
+  requireWireField(raw, "parseTwapOrder", "quantity");
+  requireWireField(raw, "parseTwapOrder", "side");
+  requireWireField(raw, "parseTwapOrder", "minutes");
+  requireWireField(raw, "parseTwapOrder", "executedQty");
+  requireWireField(raw, "parseTwapOrder", "executedValue");
+  requireWireField(raw, "parseTwapOrder", "createdAt");
+  requireWireField(raw, "parseTwapOrder", "nextActiveAt");
+  return {
+    userId: BigInt(raw.userID),
+    accountId: BigInt(raw.accountID),
+    symbol: String(raw.symbol),
+    symbolId: BigInt(raw.symbolID),
+    orderId: BigInt(raw.orderID),
+    quantity: String(raw.quantity),
+    side: orderSideFromName(raw.side),
+    minutes: BigInt(raw.minutes),
+    randomize: requireBoolean(raw, "parseTwapOrder", "randomize"),
+    reduceOnly: requireBoolean(raw, "parseTwapOrder", "reduceOnly"),
+    executedQty: String(raw.executedQty),
+    executedValue: String(raw.executedValue),
+    createdAt: BigInt(raw.createdAt),
+    nextActiveAt: BigInt(raw.nextActiveAt),
+    active: requireBoolean(raw, "parseTwapOrder", "active"),
+  };
+}
+
+/**
+ * REST TWAP query response. Wire shape: `AccountTwapOrders`
+ * `{blockTime, blockHeight, twaps: TwapOrder[]}`.
+ */
+export interface AccountTwapOrders {
+  blockTime: bigint;
+  blockHeight: bigint;
+  twaps: TwapOrder[];
+}
+
+export function parseAccountTwapOrders(raw: WireRecord): AccountTwapOrders {
+  requireWireField(raw, "parseAccountTwapOrders", "blockTime");
+  requireWireField(raw, "parseAccountTwapOrders", "blockHeight");
+  return {
+    blockTime: BigInt(raw.blockTime),
+    blockHeight: BigInt(raw.blockHeight),
+    twaps: parseWireArray(raw, "parseAccountTwapOrders", "twaps", parseTwapOrder),
+  };
+}
+
+/** Place/cancel TWAP response. Wire shape: `TwapOrderResponse` `{orderID}`. */
+export interface TwapOrderReceipt {
+  orderId: bigint;
+}
+
+export function parseTwapOrderReceipt(raw: WireRecord): TwapOrderReceipt {
+  requireWireField(raw, "parseTwapOrderReceipt", "orderID");
+  return { orderId: BigInt(raw.orderID) };
 }
 
 export type {

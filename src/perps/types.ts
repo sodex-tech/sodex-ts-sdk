@@ -10,6 +10,7 @@ import type {
   TimeInForce,
   TriggerType,
 } from "../common/enums";
+import type { WsTwapOrder } from "../ws/types";
 
 export interface MarginTier {
   maxNotionalValue: string;
@@ -290,6 +291,8 @@ export interface PerpsAccountSnapshot {
   openPositions: PerpsSnapshotPosition[];
   /** Touched symbol configs (wire `S`). Empty when the server sends `null`. */
   symbolConfigs: PerpsSnapshotSymbolConfig[];
+  /** Active TWAP orders (wire `TO`). Empty when the server sends `null`. */
+  twaps: WsTwapOrder[];
 }
 
 /**

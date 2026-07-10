@@ -19,13 +19,13 @@ import {
   timeInForceToCode,
   triggerTypeToCode,
 } from "../common/enums";
+import { ACTION_TWAP_ORDER } from "../spot/actions";
 
 export const ACTION_PERPS_NEW_ORDER = "newOrder";
 export const ACTION_PERPS_CANCEL_ORDER = "cancelOrder";
 export const ACTION_PERPS_MODIFY_ORDER = "modifyOrder";
 export const ACTION_PERPS_UPDATE_LEVERAGE = "updateLeverage";
 export const ACTION_PERPS_UPDATE_MARGIN = "updateMargin";
-
 
 export interface PerpsOrderItem {
   clOrdId: string;
@@ -75,7 +75,6 @@ export function buildPerpsNewOrderPayload(i: PerpsNewOrderInput): ActionPayload 
   };
 }
 
-
 export interface PerpsCancelItem {
   symbolId: bigint;
   orderId?: bigint;
@@ -100,7 +99,6 @@ export function buildPerpsCancelOrderPayload(i: PerpsCancelOrderInput): ActionPa
     },
   };
 }
-
 
 export interface PerpsModifyOrderInput {
   accountId: bigint;
@@ -127,7 +125,6 @@ export function buildPerpsModifyOrderPayload(i: PerpsModifyOrderInput): ActionPa
   };
 }
 
-
 export interface UpdateLeverageInput {
   accountId: bigint;
   symbolId: bigint;
@@ -147,7 +144,6 @@ export function buildUpdateLeveragePayload(i: UpdateLeverageInput): ActionPayloa
   };
 }
 
-
 export interface UpdateMarginInput {
   accountId: bigint;
   symbolId: bigint;
@@ -165,18 +161,49 @@ export function buildUpdateMarginPayload(i: UpdateMarginInput): ActionPayload {
   };
 }
 
+export interface PerpsNewTwapOrderInput {
+  accountId: bigint;
+  symbolId: bigint;
+  side: OrderSide;
+  quantity: DecimalInput;
+  minutes: number;
+  // Required: always emitted into the signed payload (even when false), per
+  // schema PerpsNewTwapOrderRequest.
+  reduceOnly: boolean;
+  randomize: boolean;
+}
+
+export function buildPerpsTwapOrderPayload(i: PerpsNewTwapOrderInput): ActionPayload {
+  return {
+    type: ACTION_TWAP_ORDER,
+    params: {
+      accountID: i.accountId,
+      symbolID: i.symbolId,
+      side: orderSideToCode(i.side),
+      quantity: toDecimalString(i.quantity, "quantity"),
+      minutes: i.minutes,
+      randomize: i.randomize,
+      reduceOnly: i.reduceOnly,
+    },
+  };
+}
+
 export {
   ACTION_REPLACE_ORDER,
   ACTION_SCHEDULE_CANCEL,
   ACTION_TRANSFER_ASSET,
   ACTION_REVOKE_API_KEY,
+  ACTION_TWAP_ORDER,
+  ACTION_CANCEL_TWAP_ORDER,
   buildReplaceOrderPayload,
   buildRevokeApiKeyPayload,
   buildScheduleCancelPayload,
   buildTransferAssetPayload,
+  buildCancelTwapPayload,
   type ReplaceOrderInput,
   type ReplaceOrderItem,
   type RevokeApiKeyInput,
   type ScheduleCancelInput,
   type TransferAssetInput,
+  type CancelTwapOrderInput,
 } from "../spot/actions";
