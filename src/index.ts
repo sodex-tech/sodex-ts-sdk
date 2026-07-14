@@ -42,6 +42,7 @@ export type {
   PerpsCancelOrderInput,
   PerpsModifyOrderInput,
   PerpsNewOrderInput,
+  PerpsNewTwapOrderInput,
   PerpsOrderItem,
   UpdateLeverageInput,
   UpdateMarginInput,
@@ -50,6 +51,7 @@ export type {
 export * from "./common/enums";
 export * from "./common/errors";
 export type {
+  AccountTwapOrders,
   ApiKeyInfo,
   BatchCancelReceipt,
   BatchOrderReceipt,
@@ -63,14 +65,24 @@ export type {
   PlaceOrderReceipt,
   Trade,
   TransferReceipt,
+  TwapOrder,
+  TwapOrderReceipt,
   UserTrade,
 } from "./common/types";
-export { klineIntervalMs, parseKline } from "./common/types";
+export {
+  klineIntervalMs,
+  parseAccountTwapOrders,
+  parseKline,
+  parseTwapOrder,
+  parseTwapOrderReceipt,
+} from "./common/types";
 export type {
+  CancelTwapOrderInput,
   ReplaceOrderInput,
   ReplaceOrderItem,
   RevokeApiKeyInput,
   ScheduleCancelInput,
+  SpotNewTwapOrderInput,
   TransferAssetInput,
 } from "./spot/actions";
 export { MAINNET_CHAIN_ID, TESTNET_CHAIN_ID } from "./common/eip712";
@@ -89,6 +101,7 @@ export type {
   WsOrderBook,
   WsOrderBookUpdate,
   WsCoinPrice,
+  WsTwapOrder,
   WsSpotAccountUpdate,
   WsPerpsAccountUpdate,
   WsSpotOrderUpdate,

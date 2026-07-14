@@ -11,3 +11,4 @@ export { parseWsSpotAccountUpdate, parseWsPerpsAccountUpdate } from "./account-u
 export { parseWsSpotOrderUpdate, parseWsPerpsOrderUpdate } from "./order-update";
 export { parseWsSpotAccountTrade, parseWsPerpsAccountTrade } from "./account-trade";
 export { parseWsLiquidationEvent } from "./liquidation";
+export { parseWsTwapOrder } from "./twap-order";

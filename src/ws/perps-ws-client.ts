@@ -7,15 +7,10 @@
  */
 
 import type { WireRecord } from "../common/types";
-import type {
-  BookTicker,
-  Kline,
-  KlineInterval,
-  MiniTicker,
-  Trade,
-} from "../common/types";
+import type { BookTicker, Kline, KlineInterval, MiniTicker, Trade } from "../common/types";
 import type { MarkPriceTicker, PerpsAccountSnapshot, PerpsTicker } from "../perps/types";
 import type { MiniEmitter } from "./emitter";
+import { WsError } from "./errors";
 import {
   parsePerpsAccountSnapshot,
   parseWsBookTicker,
@@ -32,16 +27,15 @@ import {
   parseWsPerpsTicker,
   parseWsTrade,
 } from "./parsers";
-import { WsError } from "./errors";
-import { WsTransport, type WsState } from "./transport";
+import { type WsState, WsTransport } from "./transport";
 import type {
   BookPushIntervalMs,
   CandlePushIntervalMs,
   PerpsAccountSubscribeOptions,
   TickerPushIntervalMs,
   WsClientOptions,
-  WsLifecycleEvents,
   WsCoinPrice,
+  WsLifecycleEvents,
   WsOrderBook,
   WsOrderBookUpdate,
 } from "./types";
@@ -99,7 +93,9 @@ export class PerpsWsClient {
     return this.transport.subscribe(
       "allTicker",
       { pushInterval: pushIntervalToWire(opts?.pushIntervalMs) },
-      (data) => { cb(toArray(data).map((d) => parseWsPerpsTicker(d as WireRecord))); },
+      (data) => {
+        cb(toArray(data).map((d) => parseWsPerpsTicker(d as WireRecord)));
+      },
     );
   }
 
@@ -127,14 +123,13 @@ export class PerpsWsClient {
     return this.transport.subscribe(
       "allMiniTicker",
       { pushInterval: pushIntervalToWire(opts?.pushIntervalMs) },
-      (data) => { cb(toArray(data).map((d) => parseWsMiniTicker(d as WireRecord))); },
+      (data) => {
+        cb(toArray(data).map((d) => parseWsMiniTicker(d as WireRecord)));
+      },
     );
   }
 
-  subscribeBookTicker(
-    params: { symbols: string[] },
-    cb: (ticker: BookTicker) => void,
-  ): () => void {
+  subscribeBookTicker(params: { symbols: string[] }, cb: (ticker: BookTicker) => void): () => void {
     const allowed = new Set(params.symbols);
     return this.transport.subscribe("bookTicker", { symbols: params.symbols }, (data) => {
       for (const item of toArray(data)) {
@@ -176,7 +171,9 @@ export class PerpsWsClient {
     return this.transport.subscribe(
       "allMarkPrice",
       { pushInterval: pushIntervalToWire(opts?.pushIntervalMs) },
-      (data) => { cb(toArray(data).map((d) => parseWsMarkPrice(d as WireRecord))); },
+      (data) => {
+        cb(toArray(data).map((d) => parseWsMarkPrice(d as WireRecord)));
+      },
     );
   }
 
@@ -189,10 +186,7 @@ export class PerpsWsClient {
    * per block and only when price or margin ratio changes — there is no
    * client `pushInterval`.
    */
-  subscribeCoinPrice(
-    params: { coins: string[] },
-    cb: (price: WsCoinPrice) => void,
-  ): () => void {
+  subscribeCoinPrice(params: { coins: string[] }, cb: (price: WsCoinPrice) => void): () => void {
     const allowed = new Set(params.coins);
     return this.transport.subscribe("coinPrice", { coins: params.coins }, (data) => {
       for (const item of toArray(data)) {
@@ -226,7 +220,9 @@ export class PerpsWsClient {
         tickSize: params.tickSize,
         pushInterval: pushIntervalToWire(params.pushIntervalMs),
       },
-      (data) => { cb(parseWsOrderBook(data as WireRecord)); },
+      (data) => {
+        cb(parseWsOrderBook(data as WireRecord));
+      },
       (data) => String((data as WireRecord).s) === sym,
     );
   }
@@ -261,7 +257,9 @@ export class PerpsWsClient {
         interval: ivl,
         pushInterval: pushIntervalToWire(params.pushIntervalMs),
       },
-      (data) => { cb(parseWsCandle(data as WireRecord)); },
+      (data) => {
+        cb(parseWsCandle(data as WireRecord));
+      },
       (data) => {
         const rec = data as WireRecord;
         return String(rec.s) === sym && String(rec.i) === ivl;
@@ -269,10 +267,7 @@ export class PerpsWsClient {
     );
   }
 
-  subscribeTrade(
-    params: { symbols: string[] },
-    cb: (trades: Trade[]) => void,
-  ): () => void {
+  subscribeTrade(params: { symbols: string[] }, cb: (trades: Trade[]) => void): () => void {
     const allowed = new Set(params.symbols);
     return this.transport.subscribe("trade", { symbols: params.symbols }, (data) => {
       const filtered = toArray(data)
@@ -314,15 +309,22 @@ export class PerpsWsClient {
       this.transport.subscribe(
         "accountState",
         { user: params.user, pushInterval: pushIntervalToWire(params.pushIntervalMs) },
-        (data) => { onSnapshot(parsePerpsAccountSnapshot(data as WireRecord)); },
+        (data) => {
+          onSnapshot(parsePerpsAccountSnapshot(data as WireRecord));
+        },
       ),
     );
 
-    if (opts?.onBalanceUpdate) {
-      const cb = opts.onBalanceUpdate;
+    // TWAP and balances/positions ride the same accountUpdate frame: subscribe
+    // when either callback is set, parse once, dispatch to both.
+    if (opts?.onBalanceUpdate || opts?.onTwapUpdate) {
+      const onBalance = opts.onBalanceUpdate;
+      const onTwap = opts.onTwapUpdate;
       unsubs.push(
         this.transport.subscribe("accountUpdate", { user: params.user }, (data) => {
-          cb(parseWsPerpsAccountUpdate(data as WireRecord));
+          const update = parseWsPerpsAccountUpdate(data as WireRecord);
+          if (onBalance) onBalance(update);
+          if (onTwap) onTwap(update.twaps);
         }),
       );
     }

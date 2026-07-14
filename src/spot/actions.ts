@@ -15,7 +15,6 @@ import {
   transferKindToCode,
 } from "../common/enums";
 
-
 export const ACTION_NEW_ORDER = "newOrder";
 export const ACTION_BATCH_NEW_ORDER = "batchNewOrder";
 export const ACTION_CANCEL_ORDER = "cancelOrder";
@@ -24,7 +23,10 @@ export const ACTION_REPLACE_ORDER = "replaceOrder";
 export const ACTION_SCHEDULE_CANCEL = "scheduleCancel";
 export const ACTION_TRANSFER_ASSET = "transferAsset";
 export const ACTION_REVOKE_API_KEY = "revokeAPIKey";
-
+// Action names confirmed by backend (spelled out in README.md): place =
+// newTwapOrder, cancel = cancelTwapOrder.
+export const ACTION_TWAP_ORDER = "newTwapOrder";
+export const ACTION_CANCEL_TWAP_ORDER = "cancelTwapOrder";
 
 export interface SpotNewOrderInput {
   accountId: bigint;
@@ -54,7 +56,6 @@ export function buildNewOrderPayload(i: SpotNewOrderInput): ActionPayload {
     },
   };
 }
-
 
 export interface SpotBatchNewOrderItem {
   symbolId: bigint;
@@ -91,7 +92,6 @@ export function buildBatchNewOrderPayload(i: SpotBatchNewOrderInput): ActionPayl
   };
 }
 
-
 export interface SpotCancelOrderInput {
   accountId: bigint;
   symbolId: bigint;
@@ -112,7 +112,6 @@ export function buildCancelOrderPayload(i: SpotCancelOrderInput): ActionPayload 
     },
   };
 }
-
 
 export interface SpotBatchCancelItem {
   symbolId: bigint;
@@ -140,7 +139,6 @@ export function buildBatchCancelPayload(i: SpotBatchCancelInput): ActionPayload 
     },
   };
 }
-
 
 export interface ReplaceOrderItem {
   symbolId: bigint;
@@ -173,7 +171,6 @@ export function buildReplaceOrderPayload(i: ReplaceOrderInput): ActionPayload {
   };
 }
 
-
 export interface ScheduleCancelInput {
   accountId: bigint;
   scheduledTimestamp?: bigint;
@@ -188,7 +185,6 @@ export function buildScheduleCancelPayload(i: ScheduleCancelInput): ActionPayloa
     },
   };
 }
-
 
 export interface TransferAssetInput {
   id: bigint;
@@ -213,7 +209,6 @@ export function buildTransferAssetPayload(i: TransferAssetInput): ActionPayload 
   };
 }
 
-
 export interface RevokeApiKeyInput {
   accountId: bigint;
   name: string;
@@ -225,6 +220,46 @@ export function buildRevokeApiKeyPayload(i: RevokeApiKeyInput): ActionPayload {
     params: {
       accountID: i.accountId,
       name: i.name,
+    },
+  };
+}
+
+export interface SpotNewTwapOrderInput {
+  accountId: bigint;
+  symbolId: bigint;
+  side: OrderSide;
+  quantity: DecimalInput;
+  minutes: number;
+  randomize: boolean;
+}
+
+export function buildTwapOrderPayload(i: SpotNewTwapOrderInput): ActionPayload {
+  return {
+    type: ACTION_TWAP_ORDER,
+    params: {
+      accountID: i.accountId,
+      symbolID: i.symbolId,
+      side: orderSideToCode(i.side),
+      quantity: toDecimalString(i.quantity, "quantity"),
+      minutes: i.minutes,
+      randomize: i.randomize,
+    },
+  };
+}
+
+export interface CancelTwapOrderInput {
+  accountId: bigint;
+  symbolId: bigint;
+  orderId: bigint;
+}
+
+export function buildCancelTwapPayload(i: CancelTwapOrderInput): ActionPayload {
+  return {
+    type: ACTION_CANCEL_TWAP_ORDER,
+    params: {
+      accountID: i.accountId,
+      symbolID: i.symbolId,
+      orderID: i.orderId,
     },
   };
 }

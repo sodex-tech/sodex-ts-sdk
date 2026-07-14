@@ -22,8 +22,10 @@ import {
   triggerTypeFromName,
 } from "../common/enums";
 import { HttpClient } from "../common/http";
+import { type NonceProvider, createMonotonicNonce } from "../common/nonce";
 import { SIG_TYPE_ADD_API_KEY, type Signer, signDigest } from "../common/signer";
 import {
+  type AccountTwapOrders,
   type ApiKeyInfo,
   type BatchCancelReceipt,
   type BatchOrderReceipt,
@@ -37,8 +39,14 @@ import {
   type PlaceOrderReceipt,
   type Trade,
   type TransferReceipt,
+  type TwapOrderReceipt,
   type UserTrade,
   type WireRecord,
+  optBigInt,
+  optBigIntArray,
+  optEnum,
+  optString,
+  parseAccountTwapOrders,
   parseApiKey,
   parseBatchCancelReceipt,
   parseBatchOrderReceipt as parseBatchReceipt,
@@ -49,11 +57,8 @@ import {
   parseMiniTicker,
   parseOrderBook,
   parseTrade,
+  parseTwapOrderReceipt,
   parseUserTrade,
-  optBigInt,
-  optBigIntArray,
-  optEnum,
-  optString,
   parseWireArray,
   parseWireList,
   requireBoolean,
@@ -61,20 +66,26 @@ import {
 } from "../common/types";
 import { CoinRegistry } from "../registry/coin-registry";
 import { type SymbolRef, SymbolRegistry } from "../registry/symbol-registry";
-import { type NonceProvider, createMonotonicNonce } from "../common/nonce";
+// Import from the specific file (not the barrel) to avoid a cycle; see the
+// matching note in spot/client.
+import { parseWsTwapOrder } from "../ws/parsers/twap-order";
 import {
+  type CancelTwapOrderInput,
   type PerpsCancelOrderInput,
   type PerpsModifyOrderInput,
   type PerpsNewOrderInput,
+  type PerpsNewTwapOrderInput,
   type ReplaceOrderInput,
   type RevokeApiKeyInput,
   type ScheduleCancelInput,
   type TransferAssetInput,
   type UpdateLeverageInput,
   type UpdateMarginInput,
+  buildCancelTwapPayload,
   buildPerpsCancelOrderPayload,
   buildPerpsModifyOrderPayload,
   buildPerpsNewOrderPayload,
+  buildPerpsTwapOrderPayload,
   buildReplaceOrderPayload,
   buildRevokeApiKeyPayload,
   buildScheduleCancelPayload,
@@ -146,7 +157,6 @@ export class PerpsClient {
     await Promise.all([this.symbols.refresh(), this.coins.refresh()]);
   }
 
-
   async getSymbols(symbol?: string): Promise<PerpsSymbolInfo[]> {
     const raw = await this.http.get<WireRecord[]>("/markets/symbols", { query: { symbol } });
     return parseWireList(raw, "getSymbols", parsePerpsSymbol);
@@ -207,7 +217,6 @@ export class PerpsClient {
     });
     return parseWireList(raw, "getRecentTrades", parseTrade);
   }
-
 
   async getBalances(userAddress: string, accountId?: bigint): Promise<PerpsAccountBalances> {
     const raw = await this.http.get<any>(`/accounts/${userAddress}/balances`, {
@@ -366,7 +375,6 @@ export class PerpsClient {
     return parseWireList(raw, "getFundingHistory", parseFunding);
   }
 
-
   async placeOrders(
     input: Omit<PerpsNewOrderInput, "symbolId"> & { symbol: SymbolRef },
   ): Promise<BatchOrderReceipt[]> {
@@ -410,6 +418,37 @@ export class PerpsClient {
     });
     const raw = await this.signedDelete<any[]>("/trade/orders", payload);
     return raw.map(parseBatchCancelReceipt);
+  }
+
+  async placeTwapOrder(
+    input: Omit<PerpsNewTwapOrderInput, "symbolId"> & { symbol: SymbolRef },
+  ): Promise<TwapOrderReceipt> {
+    const { symbol, ...rest } = input;
+    const payload = buildPerpsTwapOrderPayload({
+      ...rest,
+      symbolId: this.symbols.resolveId(symbol),
+    });
+    const raw = await this.signedPost<WireRecord>("/trade/twaps", payload);
+    return parseTwapOrderReceipt(raw);
+  }
+
+  async cancelTwapOrder(
+    input: Omit<CancelTwapOrderInput, "symbolId"> & { symbol: SymbolRef },
+  ): Promise<TwapOrderReceipt> {
+    const { symbol, ...rest } = input;
+    const payload = buildCancelTwapPayload({ ...rest, symbolId: this.symbols.resolveId(symbol) });
+    const raw = await this.signedDelete<WireRecord>("/trade/twaps", payload);
+    return parseTwapOrderReceipt(raw);
+  }
+
+  async getTwapOrders(
+    userAddress: string,
+    params: { symbol?: string; accountId?: bigint } = {},
+  ): Promise<AccountTwapOrders> {
+    const raw = await this.http.get<WireRecord>(`/accounts/${userAddress}/twaps`, {
+      query: { symbol: params.symbol, accountID: params.accountId },
+    });
+    return parseAccountTwapOrders(raw);
   }
 
   async replaceOrders(
@@ -528,7 +567,6 @@ export class PerpsClient {
     });
   }
 
-
   private async signedPost<T>(path: string, payload: ActionPayload): Promise<T> {
     return this.sign("POST", path, payload);
   }
@@ -576,7 +614,6 @@ export class PerpsClient {
     return this.getCoins();
   }
 }
-
 
 /**
  * Parse `PerpsSymbol` from wire (sodex-docs/rest-v1/schema.md#perpssymbol).
@@ -744,8 +781,7 @@ export function parsePerpsTicker(raw: WireRecord): PerpsTicker {
     lastSz: optString(raw, "lastSz"),
     vwap: optString(raw, "vwap"),
     change: optString(raw, "change"),
-    changePct:
-      changePct === undefined || changePct === null ? undefined : Number(changePct),
+    changePct: changePct === undefined || changePct === null ? undefined : Number(changePct),
   };
 }
 
@@ -890,6 +926,7 @@ export function parsePerpsAccountSnapshot(raw: WireRecord): PerpsAccountSnapshot
       "S",
       parsePerpsSnapshotSymbolConfig,
     ),
+    twaps: parseWireArray(raw, "parsePerpsAccountSnapshot", "TO", parseWsTwapOrder),
   };
 }
 
@@ -1021,9 +1058,7 @@ export function parsePerpsSnapshotPosition(p: WireRecord): PerpsSnapshotPosition
  * Parse `WsPerpsSymbolConfig` from wire
  * (sodex-docs/rest-v1/schema.md#wsperpssymbolconfig). All 3 fields required.
  */
-export function parsePerpsSnapshotSymbolConfig(
-  s: WireRecord,
-): PerpsSnapshotSymbolConfig {
+export function parsePerpsSnapshotSymbolConfig(s: WireRecord): PerpsSnapshotSymbolConfig {
   requireWireField(s, "parsePerpsSnapshotSymbolConfig", "s");
   requireWireField(s, "parsePerpsSnapshotSymbolConfig", "l");
   requireWireField(s, "parsePerpsSnapshotSymbolConfig", "m");
@@ -1133,18 +1168,15 @@ export function parsePerpsOrder(raw: WireRecord): PerpsOrder {
     executedValue: String(raw.executedValue),
     marginFrozen: String(raw.marginFrozen),
     clOrdID: optString(raw, "clOrdID"),
-    timeInForce:
-      tif === undefined || tif === null ? undefined : timeInForceFromName(tif),
+    timeInForce: tif === undefined || tif === null ? undefined : timeInForceFromName(tif),
     price: optString(raw, "price"),
     origQty: optString(raw, "origQty"),
     funds: optString(raw, "funds"),
     createdAt: optBigInt(raw, "createdAt"),
     updatedAt: optBigInt(raw, "updatedAt"),
     stopPrice: optString(raw, "stopPrice"),
-    stopType:
-      st === undefined || st === null ? undefined : stopTypeFromName(st),
-    triggerType:
-      tt === undefined || tt === null ? undefined : triggerTypeFromName(tt),
+    stopType: st === undefined || st === null ? undefined : stopTypeFromName(st),
+    triggerType: tt === undefined || tt === null ? undefined : triggerTypeFromName(tt),
     positionID: optBigInt(raw, "positionID"),
     primaryOrderID: optBigInt(raw, "primaryOrderID"),
     attachedOrderIDs: optBigIntArray(raw, "parsePerpsOrder", "attachedOrderIDs"),

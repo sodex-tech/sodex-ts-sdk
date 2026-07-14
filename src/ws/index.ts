@@ -8,6 +8,7 @@ export type {
   WsOrderBook,
   WsOrderBookUpdate,
   WsCoinPrice,
+  WsTwapOrder,
   WsSpotAccountUpdate,
   WsSpotBalanceUpdate,
   WsPerpsAccountUpdate,

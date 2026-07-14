@@ -18,13 +18,7 @@
  */
 
 import type { WireRecord } from "../common/types";
-import type {
-  BookTicker,
-  Kline,
-  KlineInterval,
-  MiniTicker,
-  Trade,
-} from "../common/types";
+import type { BookTicker, Kline, KlineInterval, MiniTicker, Trade } from "../common/types";
 import type { SpotAccountSnapshot } from "../spot/types";
 import type { SpotTicker } from "../spot/types";
 import type { MiniEmitter } from "./emitter";
@@ -42,7 +36,7 @@ import {
   parseWsSpotTicker,
   parseWsTrade,
 } from "./parsers";
-import { WsTransport, type WsState } from "./transport";
+import { type WsState, WsTransport } from "./transport";
 import type {
   BookPushIntervalMs,
   CandlePushIntervalMs,
@@ -108,7 +102,9 @@ export class SpotWsClient {
     return this.transport.subscribe(
       "allTicker",
       { pushInterval: pushIntervalToWire(opts?.pushIntervalMs) },
-      (data) => { cb(toArray(data).map((d) => parseWsSpotTicker(d as WireRecord))); },
+      (data) => {
+        cb(toArray(data).map((d) => parseWsSpotTicker(d as WireRecord)));
+      },
     );
   }
 
@@ -136,14 +132,13 @@ export class SpotWsClient {
     return this.transport.subscribe(
       "allMiniTicker",
       { pushInterval: pushIntervalToWire(opts?.pushIntervalMs) },
-      (data) => { cb(toArray(data).map((d) => parseWsMiniTicker(d as WireRecord))); },
+      (data) => {
+        cb(toArray(data).map((d) => parseWsMiniTicker(d as WireRecord)));
+      },
     );
   }
 
-  subscribeBookTicker(
-    params: { symbols: string[] },
-    cb: (ticker: BookTicker) => void,
-  ): () => void {
+  subscribeBookTicker(params: { symbols: string[] }, cb: (ticker: BookTicker) => void): () => void {
     const allowed = new Set(params.symbols);
     return this.transport.subscribe("bookTicker", { symbols: params.symbols }, (data) => {
       for (const item of toArray(data)) {
@@ -171,7 +166,9 @@ export class SpotWsClient {
         tickSize: params.tickSize,
         pushInterval: pushIntervalToWire(params.pushIntervalMs),
       },
-      (data) => { cb(parseWsOrderBook(data as WireRecord)); },
+      (data) => {
+        cb(parseWsOrderBook(data as WireRecord));
+      },
       (data) => String((data as WireRecord).s) === sym,
     );
   }
@@ -206,7 +203,9 @@ export class SpotWsClient {
         interval: ivl,
         pushInterval: pushIntervalToWire(params.pushIntervalMs),
       },
-      (data) => { cb(parseWsCandle(data as WireRecord)); },
+      (data) => {
+        cb(parseWsCandle(data as WireRecord));
+      },
       (data) => {
         const rec = data as WireRecord;
         return String(rec.s) === sym && String(rec.i) === ivl;
@@ -214,10 +213,7 @@ export class SpotWsClient {
     );
   }
 
-  subscribeTrade(
-    params: { symbols: string[] },
-    cb: (trades: Trade[]) => void,
-  ): () => void {
+  subscribeTrade(params: { symbols: string[] }, cb: (trades: Trade[]) => void): () => void {
     const allowed = new Set(params.symbols);
     return this.transport.subscribe("trade", { symbols: params.symbols }, (data) => {
       const filtered = toArray(data)
@@ -270,15 +266,22 @@ export class SpotWsClient {
       this.transport.subscribe(
         "accountState",
         { user: params.user, pushInterval: pushIntervalToWire(params.pushIntervalMs) },
-        (data) => { onSnapshot(parseSpotAccountSnapshot(data as WireRecord)); },
+        (data) => {
+          onSnapshot(parseSpotAccountSnapshot(data as WireRecord));
+        },
       ),
     );
 
-    if (opts?.onBalanceUpdate) {
-      const cb = opts.onBalanceUpdate;
+    // TWAP and balances ride the same accountUpdate frame: subscribe when
+    // either callback is set, parse once, dispatch to both.
+    if (opts?.onBalanceUpdate || opts?.onTwapUpdate) {
+      const onBalance = opts.onBalanceUpdate;
+      const onTwap = opts.onTwapUpdate;
       unsubs.push(
         this.transport.subscribe("accountUpdate", { user: params.user }, (data) => {
-          cb(parseWsSpotAccountUpdate(data as WireRecord));
+          const update = parseWsSpotAccountUpdate(data as WireRecord);
+          if (onBalance) onBalance(update);
+          if (onTwap) onTwap(update.twaps);
         }),
       );
     }

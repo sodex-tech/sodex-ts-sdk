@@ -116,12 +116,47 @@ export interface WsCoinPrice {
 // Account update (WS `accountUpdate` channel)
 // ---------------------------------------------------------------------------
 
+/**
+ * TWAP order snapshot carried on the WS `accountUpdate` / `accountState`
+ * `TO` field. Distinct wire shape from the REST `TwapOrder` (short single-
+ * letter keys, no userID/accountID; symbol name instead of symbolID) — parsed
+ * by `parseWsTwapOrder`, never merged with the REST parser.
+ */
+export interface WsTwapOrder {
+  /** Symbol name (wire `s`). */
+  symbol: string;
+  /** TWAP order ID (wire `i`). */
+  orderId: bigint;
+  /** Order side (wire `S`). */
+  side: OrderSide;
+  /** TWAP total quantity (wire `q`). */
+  quantity: string;
+  /** TWAP duration in minutes (wire `m`). */
+  minutes: bigint;
+  /** Whether slices are randomized (wire `r`). */
+  randomize: boolean;
+  /** Reduce-only flag (wire `R`). */
+  reduceOnly: boolean;
+  /** Executed quantity (wire `z`). */
+  executedQty: string;
+  /** Executed notional value (wire `v`). */
+  executedValue: string;
+  /** Creation time in milliseconds (wire `ct`). */
+  createdAt: bigint;
+  /** Next activation time in milliseconds (wire `nt`). */
+  nextActiveAt: bigint;
+  /** Whether this TWAP is active (wire `a`). */
+  active: boolean;
+}
+
 /** Spot balance update event (WS `accountUpdate` channel). */
 export interface WsSpotAccountUpdate {
   eventTime: bigint;
   blockTime: bigint;
   blockHeight: bigint;
   balances: WsSpotBalanceUpdate[];
+  /** Updated TWAP orders (wire `TO`). */
+  twaps: WsTwapOrder[];
 }
 
 export interface WsSpotBalanceUpdate {
@@ -138,6 +173,8 @@ export interface WsPerpsAccountUpdate {
   blockHeight: bigint;
   balances: WsPerpsBalanceUpdate[];
   positions: WsPerpsPositionUpdate[];
+  /** Updated TWAP orders (wire `TO`). */
+  twaps: WsTwapOrder[];
 }
 
 export interface WsPerpsBalanceUpdate {
@@ -263,6 +300,8 @@ export interface WsLiquidationEvent {
 export interface SpotAccountSubscribeOptions {
   /** Balance changes (WS `accountUpdate` channel). */
   onBalanceUpdate?: (update: WsSpotAccountUpdate) => void;
+  /** TWAP order updates (WS `accountUpdate` channel, `TO` field). */
+  onTwapUpdate?: (twaps: WsTwapOrder[]) => void;
   /** Order execution events (WS `accountOrderUpdate` channel). */
   onOrderUpdate?: (order: WsSpotOrderUpdate) => void;
   /** Trade fills (WS `accountTrade` channel). */
@@ -273,6 +312,8 @@ export interface SpotAccountSubscribeOptions {
 export interface PerpsAccountSubscribeOptions {
   /** Balance/position changes (WS `accountUpdate` channel). */
   onBalanceUpdate?: (update: WsPerpsAccountUpdate) => void;
+  /** TWAP order updates (WS `accountUpdate` channel, `TO` field). */
+  onTwapUpdate?: (twaps: WsTwapOrder[]) => void;
   /** Order execution events (WS `accountOrderUpdate` channel). */
   onOrderUpdate?: (order: WsPerpsOrderUpdate) => void;
   /** Trade fills (WS `accountTrade` channel). */
