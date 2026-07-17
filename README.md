@@ -109,6 +109,10 @@ prices, positions, position history, funding history; signed writes include
 placeOrders, cancelOrders, replaceOrders, modifyOrder, scheduleCancel,
 updateLeverage, updateMargin, transferAsset, addApiKey, revokeApiKey.
 
+Gateway: `getServerTime(baseUrl)` — standalone function (the endpoint lives
+at the gateway root `/api/v1/time`, outside both clients' path prefixes);
+returns server time as epoch-milliseconds `bigint`.
+
 ## Using with `sodex-next` (local dev / CI / external)
 
 Three scenarios, one SDK:

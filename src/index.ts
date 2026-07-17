@@ -76,6 +76,7 @@ export {
   parseTwapOrder,
   parseTwapOrderReceipt,
 } from "./common/types";
+export { getServerTime } from "./common/time";
 export type {
   CancelTwapOrderInput,
   ReplaceOrderInput,

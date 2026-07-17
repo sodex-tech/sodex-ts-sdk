@@ -55,7 +55,25 @@ export class HttpClient {
     return this.request<T>("DELETE", path, opts);
   }
 
+  /**
+   * GET returning the full response envelope instead of just `data` — for
+   * endpoints where envelope fields themselves carry the payload (e.g.
+   * `/api/v1/time`, whose server time is the envelope `timestamp`).
+   */
+  async getEnvelope<T>(path: string, opts: RequestOptions = {}): Promise<ResponseEnvelope<T>> {
+    return this.requestEnvelope<T>("GET", path, opts);
+  }
+
   private async request<T>(method: string, path: string, opts: RequestOptions): Promise<T> {
+    const parsed = await this.requestEnvelope<T>(method, path, opts);
+    return (parsed.data ?? (undefined as unknown)) as T;
+  }
+
+  private async requestEnvelope<T>(
+    method: string,
+    path: string,
+    opts: RequestOptions,
+  ): Promise<ResponseEnvelope<T>> {
     const url = buildUrl(this.baseUrl, path, opts.query);
     const headers: Record<string, string> = { ...this.defaultHeaders, ...opts.headers };
 
@@ -113,7 +131,7 @@ export class HttpClient {
     if (code !== 0) {
       throw new ApiError(code, parsed.error ?? "unknown error", ts);
     }
-    return (parsed.data ?? (undefined as unknown)) as T;
+    return parsed;
   }
 }
 
