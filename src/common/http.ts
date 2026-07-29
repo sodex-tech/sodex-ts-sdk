@@ -3,7 +3,8 @@ import { ApiError, TransportError } from "./errors";
 import { parseJsonBigInt } from "./json";
 
 export interface SignedHeaders {
-  key: string;
+  /** API-key name. Unified user endpoints authenticate by wallet signature and omit it. */
+  key?: string;
   signature: string;
   nonce: bigint;
   chainId?: bigint;
@@ -86,7 +87,9 @@ export class HttpClient {
       headers["Content-Type"] = "application/json";
     }
     if (opts.signed) {
-      headers["X-API-Key"] = opts.signed.key;
+      if (opts.signed.key !== undefined) {
+        headers["X-API-Key"] = opts.signed.key;
+      }
       headers["X-API-Sign"] = opts.signed.signature;
       headers["X-API-Nonce"] = opts.signed.nonce.toString(10);
       if (opts.signed.chainId !== undefined) {
@@ -104,9 +107,7 @@ export class HttpClient {
     const text = await res.text();
 
     if (!res.ok) {
-      throw new TransportError(
-        `HTTP ${res.status} from ${method} ${url}: ${text.slice(0, 200)}`,
-      );
+      throw new TransportError(`HTTP ${res.status} from ${method} ${url}: ${text.slice(0, 200)}`);
     }
 
     let parsed: ResponseEnvelope<T>;

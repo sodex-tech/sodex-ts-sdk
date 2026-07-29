@@ -1,7 +1,85 @@
-import type { Address, Hash, WalletClient } from "viem";
+import {
+  type Address,
+  type Hash,
+  type Hex,
+  type PublicClient,
+  type WalletClient,
+  encodeAbiParameters,
+  parseAbi,
+  parseAbiParameters,
+} from "viem";
 
 export const CLOB_GATEWAY_ADDRESS: Address = "0x0101010101010101010101010101010101010101";
 export const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000";
+export const CALL_FOR_PERMIT_ADDRESS: Address = "0x890B7D142841065E64E5f94a455876e6352A7801";
+export const WITHDRAW_TOKEN_TARGET: Address = "0x441BDb33C7d6DC49f627a42c3d71671D50DC2e94";
+
+export const ERC20_ABI = parseAbi([
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function balanceOf(address owner) view returns (uint256)",
+]);
+
+export const CALL_FOR_PERMIT_ABI = parseAbi([
+  "function nonces(address owner, uint192 key) view returns (uint256)",
+  "function hashCallForPermit(address to, string cmdType, bytes cmdData, uint256 nonce, uint256 deadline) view returns (bytes32)",
+]);
+
+export interface WithdrawCommandInput {
+  coin: string;
+  chain: string;
+  receiver: string;
+  amount: bigint;
+  withdrawalType: 0 | 1;
+  memo?: string;
+  failedBackToClob?: boolean;
+}
+
+export function encodeWithdrawCommand(input: WithdrawCommandInput): Hex {
+  return encodeAbiParameters(
+    parseAbiParameters("string, string, string, uint256, uint8, string, bool"),
+    [
+      input.coin,
+      input.chain,
+      input.receiver,
+      input.amount,
+      input.withdrawalType,
+      input.memo ?? "",
+      input.failedBackToClob ?? true,
+    ],
+  );
+}
+
+export async function getEvmBalance(
+  publicClient: PublicClient,
+  userAddress: Address,
+  tokenAddress: Address,
+): Promise<bigint> {
+  if (tokenAddress.toLowerCase() === ZERO_ADDRESS) {
+    return publicClient.getBalance({ address: userAddress });
+  }
+  return publicClient.readContract({
+    address: tokenAddress,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: [userAddress],
+  });
+}
+
+export async function waitForEvmBalanceIncrease(
+  publicClient: PublicClient,
+  userAddress: Address,
+  tokenAddress: Address,
+  previousBalance: bigint,
+  timeoutMs = 120_000,
+): Promise<bigint> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const balance = await getEvmBalance(publicClient, userAddress, tokenAddress);
+    if (balance > previousBalance) return balance;
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
+  throw new Error("timed out waiting for the ValueChain balance to increase");
+}
 
 export type Destination = "spot" | "perps";
 export const destinationToCode = (d: Destination): bigint => (d === "spot" ? 0n : 1n);

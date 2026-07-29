@@ -26,6 +26,7 @@ export const ACTION_PERPS_CANCEL_ORDER = "cancelOrder";
 export const ACTION_PERPS_MODIFY_ORDER = "modifyOrder";
 export const ACTION_PERPS_UPDATE_LEVERAGE = "updateLeverage";
 export const ACTION_PERPS_UPDATE_MARGIN = "updateMargin";
+export const ACTION_PERPS_UPDATE_COLLATERAL = "updateCollateral";
 
 export interface PerpsOrderItem {
   clOrdId: string;
@@ -156,6 +157,23 @@ export function buildUpdateMarginPayload(i: UpdateMarginInput): ActionPayload {
     params: {
       accountID: i.accountId,
       symbolID: i.symbolId,
+      amount: toDecimalString(i.amount, "amount"),
+    },
+  };
+}
+
+export interface UpdateCollateralInput {
+  accountId: bigint;
+  coinId: bigint;
+  amount: DecimalInput;
+}
+
+export function buildUpdateCollateralPayload(i: UpdateCollateralInput): ActionPayload {
+  return {
+    type: ACTION_PERPS_UPDATE_COLLATERAL,
+    params: {
+      accountID: i.accountId,
+      coinID: i.coinId,
       amount: toDecimalString(i.amount, "amount"),
     },
   };

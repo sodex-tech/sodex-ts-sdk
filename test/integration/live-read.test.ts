@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { PerpsClient } from "../../src/perps/client";
 import { SpotClient } from "../../src/spot/client";
+import { UserClient } from "../../src/user/client";
 
 const live = process.env.SODEX_LIVE === "1";
 const describeLive = live ? describe : describe.skip;
@@ -64,5 +65,33 @@ describeLive("live mainnet smoke — perps", () => {
     for (const m of mps) {
       expect(typeof m.nextFundingTime).toBe("bigint");
     }
+  });
+});
+
+describeLive("live mainnet smoke — user and public", () => {
+  const user = new UserClient({ baseUrl: MAINNET });
+  const userAddress = "0x0fec2349f465ffa49d654e1825e204bc0828c8a5";
+
+  // Validates the live transfer config is directly usable for coin/chain route discovery.
+  it("discovers at least one deposit and withdrawal route", async () => {
+    const assets = await user.getTransferConfigs();
+    expect(assets.length).toBeGreaterThan(0);
+    expect(assets.some((asset) => asset.chains.length > 0)).toBe(true);
+    expect(typeof assets[0]!.decimals).toBe("bigint");
+  });
+
+  // Validates live Gateway status, announcements, and address-scoped compatibility metadata.
+  it("reads public and user metadata", async () => {
+    const [status, announcements, eligibility, apiKeys] = await Promise.all([
+      user.getSystemStatus(),
+      user.getAnnouncements({ page: 1, size: 1, lang: "en" }),
+      user.getApiKeyEligibility(userAddress),
+      user.getApiKeys(userAddress),
+    ]);
+    expect(typeof status).toBe("string");
+    expect(Array.isArray(announcements.articles)).toBe(true);
+    expect(typeof eligibility.eligible).toBe("boolean");
+    expect(Array.isArray(apiKeys.spot)).toBe(true);
+    expect(Array.isArray(apiKeys.perps)).toBe(true);
   });
 });

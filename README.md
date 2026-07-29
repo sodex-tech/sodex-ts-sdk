@@ -89,8 +89,9 @@ await perps.placeOrders({
 @sodex/sdk            top-level re-exports of SpotClient / PerpsClient / enums
 @sodex/sdk/spot       only the spot module
 @sodex/sdk/perps      only the perps module
+@sodex/sdk/user       Gateway user, deposit/withdraw, and public metadata APIs
 @sodex/sdk/signer     raw signing primitives (no HTTP)
-@sodex/sdk/evm        optional ClobGateway helper (requires peer `viem`)
+@sodex/sdk/evm        ClobGateway plus withdrawal permit/ABI helpers (requires peer `viem`)
 ```
 
 The EVM helper is opt-in: viem is a **peer dependency**, so the core package
@@ -107,7 +108,14 @@ scheduleCancel, transferAsset, addApiKey, revokeApiKey.
 Perps (~20): all of the above minus `transferAsset` swap semantics plus mark
 prices, positions, position history, funding history; signed writes include
 placeOrders, cancelOrders, replaceOrders, modifyOrder, scheduleCancel,
-updateLeverage, updateMargin, transferAsset, addApiKey, revokeApiKey.
+updateLeverage, updateMargin, updateCollateral, transferAsset, addApiKey,
+revokeApiKey.
+
+Gateway user/public: transfer configuration and route discovery, custody
+deposit-address query/create, deposit and withdrawal status/history, sponsored
+EVM withdrawal submission, unified API keys/builders, API-key eligibility, fee
+rate, transaction quota, subaccounts, system status, and announcements through
+`UserClient`.
 
 Gateway: `getServerTime(baseUrl)` — standalone function (the endpoint lives
 at the gateway root `/api/v1/time`, outside both clients' path prefixes);
@@ -144,6 +152,13 @@ To run live smoke tests against mainnet (read-only):
 ```bash
 SODEX_LIVE=1 pnpm test test/integration
 ```
+
+## End-to-end user-flow examples
+
+Runnable examples for custody/bridge deposit discovery, EVM and engine
+transfers, external withdrawals, API-key registration, Spot/Perps orders, and
+WebSocket execution updates live in
+[`examples/user-flows`](./examples/user-flows/README.md).
 
 ## Testing focus
 

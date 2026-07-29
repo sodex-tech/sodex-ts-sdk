@@ -44,9 +44,45 @@ export type {
   PerpsNewOrderInput,
   PerpsNewTwapOrderInput,
   PerpsOrderItem,
+  UpdateCollateralInput,
   UpdateLeverageInput,
   UpdateMarginInput,
 } from "./perps/actions";
+
+export { UserClient } from "./user/client";
+export type { UserClientOptions } from "./user/client";
+export type {
+  AddUserApiKeyInput,
+  AnnouncementArticle,
+  AnnouncementDetail,
+  AnnouncementLanguage,
+  AnnouncementList,
+  ApiKeyBuilderInput,
+  ApiKeyEligibility,
+  ApproveBuilderInput,
+  ChainTransferConfig,
+  CoinTransferConfig,
+  CreateDepositAddressInput,
+  DepositWithdrawalHistory,
+  DepositWithdrawalRecord,
+  EvmWithdrawRequest,
+  EvmWithdrawSubmission,
+  HexString,
+  RevokeUserApiKeyInput,
+  TransferHistoryFilters,
+  UserAddress,
+  UserApiKey,
+  UserApiKeys,
+  UserApiKeyType,
+  UserBuilder,
+  UserBuilders,
+  UserDepositAddress,
+  UserFeeRate,
+  UserSignedRequest,
+  UserSubaccount,
+  UserSubaccounts,
+  UserTransactionQuota,
+} from "./user/types";
 
 export * from "./common/enums";
 export * from "./common/errors";

@@ -25,6 +25,7 @@ import {
   buildPerpsCancelOrderPayload,
   buildPerpsModifyOrderPayload,
   buildPerpsNewOrderPayload,
+  buildUpdateCollateralPayload,
   buildUpdateLeveragePayload,
   buildUpdateMarginPayload,
 } from "../../src/perps/actions";
@@ -208,6 +209,14 @@ describe("canonical JSON golden vectors — perps actions", () => {
     });
     expect(canonicalStringify(p)).toBe(
       '{"type":"updateMargin","params":{"accountID":1001,"symbolID":1,"amount":"-50"}}',
+    );
+  });
+
+  // Validates the Perps collateral action name, field order, coin ID, and signed decimal amount.
+  it("updateCollateral", () => {
+    const p = buildUpdateCollateralPayload({ accountId: 1001n, coinId: 7n, amount: "-50" });
+    expect(canonicalStringify(p)).toBe(
+      '{"type":"updateCollateral","params":{"accountID":1001,"coinID":7,"amount":"-50"}}',
     );
   });
 });
