@@ -3,7 +3,7 @@
  * notes — this example intentionally uses the master key and a monotonic
  * timestamp nonce so it stays single-file and reproducible.
  */
-import { PerpsClient, PerpsSigner } from "../src";
+import { PerpsClient, PerpsSigner } from "@sodex/sdk";
 
 async function main() {
   const pk = requireEnv("SODEX_PRIVATE_KEY");

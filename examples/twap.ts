@@ -10,7 +10,7 @@
  * served here (gateway keeps only active ones) — see the trading-market-api
  * path for history.
  */
-import { SpotClient, SpotSigner, SpotWsClient } from "../src";
+import { SpotClient, SpotSigner, SpotWsClient } from "@sodex/sdk";
 
 async function main() {
   const pk = requireEnv("SODEX_PRIVATE_KEY");
@@ -53,7 +53,7 @@ async function main() {
 
   // Cancel after 30s for demo purposes.
   setTimeout(() => {
-    void client.cancelTwapOrder({ symbol: "vBTC_vUSDC", orderId: receipt.orderId });
+    void client.cancelTwapOrder({ accountId, symbol: "vBTC_vUSDC", orderId: receipt.orderId });
     unsub();
     ws.close();
   }, 30_000);

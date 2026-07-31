@@ -69,3 +69,26 @@ export function valueChainClients(privateKey: Hex) {
     walletClient: createWalletClient({ account, chain, transport }),
   };
 }
+
+export function sourceChainClients(privateKey: Hex) {
+  const rpcUrl = requireEnv("SODEX_SOURCE_RPC");
+  const chainId = Number(requireEnv("SODEX_SOURCE_CHAIN_ID"));
+  const account = privateKeyToAccount(privateKey);
+  const chain = defineChain({
+    id: chainId,
+    name: process.env.SODEX_SOURCE_CHAIN_NAME ?? `Source Chain ${chainId}`,
+    nativeCurrency: {
+      name: process.env.SODEX_SOURCE_NATIVE_NAME ?? "Native Token",
+      symbol: process.env.SODEX_SOURCE_NATIVE_SYMBOL ?? "ETH",
+      decimals: Number(process.env.SODEX_SOURCE_NATIVE_DECIMALS ?? "18"),
+    },
+    rpcUrls: { default: { http: [rpcUrl] } },
+  });
+  const transport = http(rpcUrl);
+  return {
+    account,
+    chain,
+    publicClient: createPublicClient({ chain, transport }),
+    walletClient: createWalletClient({ account, chain, transport }),
+  };
+}

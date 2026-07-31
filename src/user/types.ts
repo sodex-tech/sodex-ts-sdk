@@ -1,6 +1,12 @@
 export type UserAddress = `0x${string}`;
 export type HexString = `0x${string}`;
 export type UserApiKeyType = "EVM";
+export type UserStatusCode = "Active" | "UserNotFound";
+
+export interface UserStatus {
+  status: UserStatusCode;
+  userID: bigint;
+}
 
 export interface ChainTransferConfig {
   chain: string;
@@ -32,9 +38,10 @@ export interface UserDepositAddress {
 
 export interface CreateDepositAddressInput {
   chain: string;
-  nonce: bigint;
-  deadline: bigint;
-  signature: HexString;
+}
+
+export interface UserDepositAddresses {
+  accountAddresses: UserDepositAddress[];
 }
 
 export interface DepositWithdrawalRecord {

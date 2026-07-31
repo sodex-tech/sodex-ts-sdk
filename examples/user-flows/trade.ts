@@ -1,3 +1,11 @@
+import {
+  PerpsClient,
+  PerpsSigner,
+  PerpsWsClient,
+  SpotClient,
+  SpotSigner,
+  SpotWsClient,
+} from "@sodex/sdk";
 /**
  * Query market/account state, place one Spot or Perps order, print its order
  * ID, and listen for order/fill details over WebSocket.
@@ -8,14 +16,6 @@
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { WebSocket } from "ws";
-import {
-  PerpsClient,
-  PerpsSigner,
-  PerpsWsClient,
-  SpotClient,
-  SpotSigner,
-  SpotWsClient,
-} from "../../src";
 import { gatewayUrl, optionalPrivateKey, parseChoice, requireEnv, sleep } from "./config";
 
 const MARKETS = ["spot", "perps"] as const;
@@ -109,7 +109,7 @@ async function tradeSpot(input: TradeInput) {
   const updateReceived = new Promise<void>((resolve) => {
     resolveUpdate = resolve;
   });
-  const unsubscribe = ws.subscribeAccountState(
+  const subscription = ws.subscribeAccountState(
     { user: input.userAddress, symbols: [symbols[0]?.name ?? input.symbol] },
     () => {},
     {
@@ -125,6 +125,7 @@ async function tradeSpot(input: TradeInput) {
   );
 
   try {
+    await subscription.ready;
     const receipt = await client.placeOrder({
       accountId,
       symbol: input.symbol,
@@ -139,7 +140,7 @@ async function tradeSpot(input: TradeInput) {
     console.log("Spot order accepted:", receipt);
     await Promise.race([updateReceived, sleep(waitMs())]);
   } finally {
-    unsubscribe();
+    await subscription.unsubscribe();
     ws.close();
   }
 }
@@ -175,7 +176,7 @@ async function tradePerps(input: TradeInput) {
   const updateReceived = new Promise<void>((resolve) => {
     resolveUpdate = resolve;
   });
-  const unsubscribe = ws.subscribeAccountState(
+  const subscription = ws.subscribeAccountState(
     { user: input.userAddress, symbols: [symbols[0]?.name ?? input.symbol] },
     () => {},
     {
@@ -191,6 +192,7 @@ async function tradePerps(input: TradeInput) {
   );
 
   try {
+    await subscription.ready;
     const receipt = await client.placeOrder({
       accountId,
       symbol: input.symbol,
@@ -208,7 +210,7 @@ async function tradePerps(input: TradeInput) {
     console.log("Perps order accepted:", receipt);
     await Promise.race([updateReceived, sleep(waitMs())]);
   } finally {
-    unsubscribe();
+    await subscription.unsubscribe();
     ws.close();
   }
 }

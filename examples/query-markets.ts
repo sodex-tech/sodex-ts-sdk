@@ -2,7 +2,7 @@
  * Minimal read-only example. Run with:
  *   pnpm tsx examples/query-markets.ts
  */
-import { SpotClient, PerpsClient } from "../src";
+import { PerpsClient, SpotClient } from "@sodex/sdk";
 
 async function main() {
   const spot = new SpotClient({ baseUrl: "https://mainnet-gw.sodex.dev" });

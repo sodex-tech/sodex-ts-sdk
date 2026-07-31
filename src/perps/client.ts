@@ -21,9 +21,20 @@ import {
   timeInForceFromName,
   triggerTypeFromName,
 } from "../common/enums";
-import { HttpClient } from "../common/http";
-import { type NonceProvider, createMonotonicNonce } from "../common/nonce";
-import { SIG_TYPE_ADD_API_KEY, type Signer, signDigest } from "../common/signer";
+import { HttpClient, type RetryOptions } from "../common/http";
+import {
+  type NonceManager,
+  type NonceProvider,
+  createMonotonicNonce,
+  globalNonceManager,
+  signerNonceKey,
+} from "../common/nonce";
+import {
+  SIG_TYPE_ADD_API_KEY,
+  type Signer,
+  addressFromPrivateKey,
+  signDigest,
+} from "../common/signer";
 import {
   type AccountTwapOrders,
   type ApiKeyInfo,
@@ -126,7 +137,14 @@ export interface PerpsClientOptions {
   signer?: Signer;
   apiKeyName?: string;
   fetch?: typeof fetch;
+  /** HTTP request timeout in milliseconds. Defaults to 10 seconds; `null` disables it. */
+  timeoutMs?: number | null;
+  /** Optional GET-only retry policy. Signed writes are never retried. */
+  retry?: boolean | RetryOptions;
+  /** Legacy nonce override. When set, it takes precedence over `nonceManager`. */
   nonce?: NonceProvider;
+  /** Shared nonce allocator/serializer. Defaults to the process-wide manager. */
+  nonceManager?: NonceManager;
   symbols?: PerpsSymbolInfo[];
   coins?: PerpsCoinInfo[];
 }
@@ -138,17 +156,21 @@ export class PerpsClient {
   readonly chainId: bigint;
   private readonly signer?: Signer;
   private readonly apiKeyName: string;
-  private readonly nonce: NonceProvider;
+  private readonly nonce?: NonceProvider;
+  private readonly nonceManager: NonceManager;
 
   constructor(opts: PerpsClientOptions) {
     this.http = new HttpClient({
       baseUrl: `${opts.baseUrl.replace(/\/$/, "")}/api/v1/perps`,
       fetch: opts.fetch,
+      timeoutMs: opts.timeoutMs,
+      retry: opts.retry,
     });
     this.chainId = opts.chainId ?? MAINNET_CHAIN_ID;
     this.signer = opts.signer;
     this.apiKeyName = opts.apiKeyName ?? "default";
-    this.nonce = opts.nonce ?? createMonotonicNonce();
+    this.nonce = opts.nonce;
+    this.nonceManager = opts.nonceManager ?? globalNonceManager;
     this.symbols = new SymbolRegistry(() => this.fetchSymbols());
     this.coins = new CoinRegistry(() => this.fetchCoins());
     if (opts.symbols) this.symbols.load(opts.symbols);
@@ -543,38 +565,42 @@ export class PerpsClient {
       apiKeyName?: string;
     },
   ): Promise<void> {
-    const nonce = this.nonce();
     const chainId = opts.chainId ?? this.chainId;
-    const domain = makeDomain(UNIVERSAL_DOMAIN_NAME, chainId);
-    const structHash = addApiKeyStructHash({
-      accountId: input.accountId,
-      name: input.name,
-      keyType: apiKeyTypeToCode(input.type),
-      publicKey: input.publicKey,
-      expiresAt: input.expiresAt,
-      nonce,
-    });
-    const digest = eip712Digest(domain, structHash);
     const keyBytes =
       typeof opts.masterPrivateKey === "string"
         ? hexToBytes(opts.masterPrivateKey)
         : opts.masterPrivateKey;
-    const wireSig = signDigest(digest, keyBytes, SIG_TYPE_ADD_API_KEY);
-    await this.http.post("/accounts/api-keys", {
-      body: {
-        accountID: input.accountId,
-        name: input.name,
-        type: apiKeyTypeToCode(input.type),
-        publicKey: bytesToHex(input.publicKey),
-        expiresAt: input.expiresAt,
+    await this.withNonce(
+      signerNonceKey(chainId, addressFromPrivateKey(keyBytes)),
+      async (nonce) => {
+        const domain = makeDomain(UNIVERSAL_DOMAIN_NAME, chainId);
+        const structHash = addApiKeyStructHash({
+          accountId: input.accountId,
+          name: input.name,
+          keyType: apiKeyTypeToCode(input.type),
+          publicKey: input.publicKey,
+          expiresAt: input.expiresAt,
+          nonce,
+        });
+        const digest = eip712Digest(domain, structHash);
+        const wireSig = signDigest(digest, keyBytes, SIG_TYPE_ADD_API_KEY);
+        await this.http.post("/accounts/api-keys", {
+          body: {
+            accountID: input.accountId,
+            name: input.name,
+            type: apiKeyTypeToCode(input.type),
+            publicKey: bytesToHex(input.publicKey),
+            expiresAt: input.expiresAt,
+          },
+          signed: {
+            key: opts.apiKeyName ?? "default",
+            signature: bytesToHex(wireSig),
+            nonce,
+            chainId,
+          },
+        });
       },
-      signed: {
-        key: opts.apiKeyName ?? "default",
-        signature: bytesToHex(wireSig),
-        nonce,
-        chainId,
-      },
-    });
+    );
   }
 
   private async signedPost<T>(path: string, payload: ActionPayload): Promise<T> {
@@ -593,18 +619,23 @@ export class PerpsClient {
     if (!this.signer) {
       throw new Error("PerpsClient: signer not configured — pass `signer` in constructor options");
     }
-    const nonce = this.nonce();
-    const wireSig = await this.signer.sign(payload, nonce);
-    const bodyText = payloadBody(payload);
-    const opts = {
-      bodyText,
-      signed: {
-        key: this.apiKeyName,
-        signature: bytesToHex(wireSig),
-        nonce,
-      },
-    };
-    return method === "POST" ? this.http.post<T>(path, opts) : this.http.del<T>(path, opts);
+    return this.withNonce(signerNonceKey(this.chainId, this.signer.address), async (nonce) => {
+      const wireSig = await this.signer!.sign(payload, nonce);
+      const bodyText = payloadBody(payload);
+      const opts = {
+        bodyText,
+        signed: {
+          key: this.apiKeyName,
+          signature: bytesToHex(wireSig),
+          nonce,
+        },
+      };
+      return method === "POST" ? this.http.post<T>(path, opts) : this.http.del<T>(path, opts);
+    });
+  }
+
+  private withNonce<T>(key: string, task: (nonce: bigint) => Promise<T>): Promise<T> {
+    return this.nonce ? task(this.nonce()) : this.nonceManager.run(key, task);
   }
 
   private async resolveWireName(ref: SymbolRef): Promise<string> {

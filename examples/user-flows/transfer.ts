@@ -1,3 +1,12 @@
+import {
+  PerpsClient,
+  PerpsSigner,
+  SpotClient,
+  SpotSigner,
+  UserClient,
+  waitForSpotBalanceChange,
+} from "@sodex/sdk";
+import { ClobGateway, ERC20_ABI } from "@sodex/sdk/evm";
 /**
  * Execute one balance movement. Supported SODEX_TRANSFER values:
  * evm-to-spot, evm-to-perps, spot-to-perps, perps-to-spot, spot-to-evm.
@@ -7,8 +16,6 @@
  */
 import { formatUnits, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { PerpsClient, PerpsSigner, SpotClient, SpotSigner, UserClient } from "../../src";
-import { ClobGateway, ERC20_ABI } from "../../src/evm";
 import {
   CLOB_GATEWAY_ADDRESS,
   TREASURY_ACCOUNT_ID,
@@ -17,7 +24,6 @@ import {
   optionalPrivateKey,
   parseChoice,
   requireEnv,
-  sleep,
   valueChainClients,
 } from "./config";
 
@@ -89,6 +95,10 @@ async function main() {
       userAddress,
       valueChainAsset,
       previousSpotBalance,
+      {
+        timeoutMs: Number(process.env.SODEX_WAIT_SECONDS ?? "120") * 1_000,
+        requireActiveAccount: true,
+      },
     );
     console.log("Deposit credited to Spot:", {
       accountId: state.accountId,
@@ -218,22 +228,6 @@ async function depositFromEvm(input: {
       : `Deposited ${input.valueChainAsset} to Spot.`,
   );
   return formatUnits(creditedAmount, input.decimals);
-}
-
-async function waitForSpotBalanceChange(
-  spot: SpotClient,
-  userAddress: `0x${string}`,
-  coin: string,
-  previous: string | undefined,
-) {
-  const deadline = Date.now() + Number(process.env.SODEX_WAIT_SECONDS ?? "120") * 1_000;
-  while (Date.now() < deadline) {
-    await sleep(3_000);
-    const current = await spot.getAccountState(userAddress);
-    const balance = current.balances.find((candidate) => candidate.coin === coin)?.total;
-    if (current.accountId !== 0n && balance !== previous) return current;
-  }
-  throw new Error("timed out waiting for the EVM deposit to reach Spot");
 }
 
 main().catch((error) => {

@@ -33,5 +33,27 @@ export {
 } from "../common/eip712";
 export { hashActionPayload, payloadBody, type ActionPayload } from "../common/action-payload";
 export { canonicalStringify } from "../common/canonical-json";
+export {
+  createMonotonicNonce,
+  createNonceManager,
+  globalNonceManager,
+  nowMillis,
+  signerNonceKey,
+  type NonceManager,
+  type NonceManagerOptions,
+  type NonceProvider,
+} from "../common/nonce";
 export { SpotSigner } from "../spot/signer";
 export { PerpsSigner } from "../perps/signer";
+export {
+  LocalUserSigner,
+  TypedDataUserSigner,
+  buildAddApiKeyTypedData,
+  buildApproveBuilderFeeTypedData,
+  buildRevokeApiKeyTypedData,
+} from "../user/signer";
+export type {
+  LocalUserSignerOptions,
+  TypedDataUserSignerOptions,
+  UserSigner,
+} from "../user/signer";

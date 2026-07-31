@@ -19,8 +19,7 @@
  *   SODEX_GATEWAY=wss://my-gw.example.com pnpm tsx examples/ws-push-interval.ts
  */
 import { WebSocket } from "ws";
-import { PerpsWsClient, SpotWsClient } from "../src";
-import type { TickerPushIntervalMs } from "../src/ws/types";
+import { PerpsWsClient, SpotWsClient, type TickerPushIntervalMs } from "@sodex/sdk";
 
 const baseUrl = process.env.SODEX_GATEWAY ?? "wss://mainnet-gw.sodex.dev";
 

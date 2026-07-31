@@ -52,6 +52,30 @@ export interface WsClientOptions {
   autoReconnect?: boolean;
   /** Max reconnect backoff delay in ms. Default `30_000`. */
   maxReconnectDelay?: number;
+  /** Timeout for subscribe/unsubscribe acknowledgements. Default `10_000`. */
+  requestTimeout?: number;
+}
+
+export interface WsSubscriptionOptions {
+  /** Abort registration and remove this listener. */
+  signal?: AbortSignal;
+  /** Called when an acknowledged subscription later fails or cannot be restored. */
+  onError?: (error: Error) => void;
+}
+
+/**
+ * Backward-compatible subscription handle.
+ *
+ * Calling the handle still performs an immediate best-effort unsubscribe.
+ * New integrations should await `ready` before depending on the stream and
+ * await `unsubscribe()` during graceful shutdown.
+ */
+export interface WsSubscription {
+  (): void;
+  /** Resolves only after Gateway acknowledges the subscribe request. */
+  readonly ready: Promise<void>;
+  /** Remove the listener and await Gateway's final unsubscribe ack when needed. */
+  unsubscribe(): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -297,7 +321,7 @@ export interface WsLiquidationEvent {
 
 /** Fine-grained callbacks for spot account channels. Only channels with
  *  a provided callback are subscribed. */
-export interface SpotAccountSubscribeOptions {
+export interface SpotAccountSubscribeOptions extends WsSubscriptionOptions {
   /** Balance changes (WS `accountUpdate` channel). */
   onBalanceUpdate?: (update: WsSpotAccountUpdate) => void;
   /** TWAP order updates (WS `accountUpdate` channel, `TO` field). */
@@ -309,7 +333,7 @@ export interface SpotAccountSubscribeOptions {
 }
 
 /** Fine-grained callbacks for perps account channels. */
-export interface PerpsAccountSubscribeOptions {
+export interface PerpsAccountSubscribeOptions extends WsSubscriptionOptions {
   /** Balance/position changes (WS `accountUpdate` channel). */
   onBalanceUpdate?: (update: WsPerpsAccountUpdate) => void;
   /** TWAP order updates (WS `accountUpdate` channel, `TO` field). */

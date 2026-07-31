@@ -20,6 +20,11 @@ export class ApiError extends SodexError {
     public readonly code: number,
     message: string,
     public readonly timestamp: bigint,
+    public readonly context: {
+      method?: string;
+      url?: string;
+      status?: number;
+    } = {},
   ) {
     super(`API error ${code}: ${message}`);
     this.name = "ApiError";
@@ -28,7 +33,18 @@ export class ApiError extends SodexError {
 
 export class TransportError extends SodexError {
   public override readonly cause?: unknown;
-  constructor(message: string, cause?: unknown) {
+  constructor(
+    message: string,
+    cause?: unknown,
+    public readonly context: {
+      method?: string;
+      url?: string;
+      status?: number;
+      responseBody?: string;
+      timedOut?: boolean;
+      aborted?: boolean;
+    } = {},
+  ) {
     super(message);
     this.name = "TransportError";
     this.cause = cause;

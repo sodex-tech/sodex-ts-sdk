@@ -2,7 +2,7 @@
  * Smoke-test `getRecentTrades` against mainnet.
  * Run with: pnpm tsx examples/query-trades.ts
  */
-import { PerpsClient, SpotClient } from "../src";
+import { PerpsClient, SpotClient } from "@sodex/sdk";
 
 function fmtTime(ms: bigint): string {
   return new Date(Number(ms)).toISOString().replace("T", " ").slice(0, 19) + "Z";

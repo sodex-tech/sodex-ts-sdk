@@ -38,11 +38,14 @@ import type {
   WsLifecycleEvents,
   WsOrderBook,
   WsOrderBookUpdate,
+  WsSubscription,
+  WsSubscriptionOptions,
 } from "./types";
 
 export class PerpsWsClient {
   private readonly transport: WsTransport;
   private accountUser: string | null = null;
+  private readonly accountSubscriptions = new Set<symbol>();
 
   get events(): MiniEmitter<WsLifecycleEvents> {
     return this.transport.events;
@@ -59,6 +62,8 @@ export class PerpsWsClient {
 
   close(): void {
     this.transport.close();
+    this.accountUser = null;
+    this.accountSubscriptions.clear();
   }
 
   get state(): WsState {
@@ -72,7 +77,8 @@ export class PerpsWsClient {
   subscribeTicker(
     params: { symbols: string[]; pushIntervalMs?: TickerPushIntervalMs },
     cb: (ticker: PerpsTicker) => void,
-  ): () => void {
+    options?: WsSubscriptionOptions,
+  ): WsSubscription {
     const allowed = new Set(params.symbols);
     return this.transport.subscribe(
       "ticker",
@@ -83,26 +89,31 @@ export class PerpsWsClient {
           if (allowed.has(String(rec.s))) cb(parseWsPerpsTicker(rec));
         }
       },
+      undefined,
+      options,
     );
   }
 
   subscribeAllTickers(
     cb: (tickers: PerpsTicker[]) => void,
-    opts?: { pushIntervalMs?: TickerPushIntervalMs },
-  ): () => void {
+    opts?: WsSubscriptionOptions & { pushIntervalMs?: TickerPushIntervalMs },
+  ): WsSubscription {
     return this.transport.subscribe(
       "allTicker",
       { pushInterval: pushIntervalToWire(opts?.pushIntervalMs) },
       (data) => {
         cb(toArray(data).map((d) => parseWsPerpsTicker(d as WireRecord)));
       },
+      undefined,
+      opts,
     );
   }
 
   subscribeMiniTicker(
     params: { symbols: string[]; pushIntervalMs?: TickerPushIntervalMs },
     cb: (ticker: MiniTicker) => void,
-  ): () => void {
+    options?: WsSubscriptionOptions,
+  ): WsSubscription {
     const allowed = new Set(params.symbols);
     return this.transport.subscribe(
       "miniTicker",
@@ -113,43 +124,67 @@ export class PerpsWsClient {
           if (allowed.has(String(rec.s))) cb(parseWsMiniTicker(rec));
         }
       },
+      undefined,
+      options,
     );
   }
 
   subscribeAllMiniTickers(
     cb: (tickers: MiniTicker[]) => void,
-    opts?: { pushIntervalMs?: TickerPushIntervalMs },
-  ): () => void {
+    opts?: WsSubscriptionOptions & { pushIntervalMs?: TickerPushIntervalMs },
+  ): WsSubscription {
     return this.transport.subscribe(
       "allMiniTicker",
       { pushInterval: pushIntervalToWire(opts?.pushIntervalMs) },
       (data) => {
         cb(toArray(data).map((d) => parseWsMiniTicker(d as WireRecord)));
       },
+      undefined,
+      opts,
     );
   }
 
-  subscribeBookTicker(params: { symbols: string[] }, cb: (ticker: BookTicker) => void): () => void {
+  subscribeBookTicker(
+    params: { symbols: string[] },
+    cb: (ticker: BookTicker) => void,
+    options?: WsSubscriptionOptions,
+  ): WsSubscription {
     const allowed = new Set(params.symbols);
-    return this.transport.subscribe("bookTicker", { symbols: params.symbols }, (data) => {
-      for (const item of toArray(data)) {
-        const rec = item as WireRecord;
-        if (allowed.has(String(rec.s))) cb(parseWsBookTicker(rec));
-      }
-    });
+    return this.transport.subscribe(
+      "bookTicker",
+      { symbols: params.symbols },
+      (data) => {
+        for (const item of toArray(data)) {
+          const rec = item as WireRecord;
+          if (allowed.has(String(rec.s))) cb(parseWsBookTicker(rec));
+        }
+      },
+      undefined,
+      options,
+    );
   }
 
-  subscribeAllBookTickers(cb: (tickers: BookTicker[]) => void): () => void {
-    return this.transport.subscribe("allBookTicker", {}, (data) => {
-      cb(toArray(data).map((d) => parseWsBookTicker(d as WireRecord)));
-    });
+  subscribeAllBookTickers(
+    cb: (tickers: BookTicker[]) => void,
+    options?: WsSubscriptionOptions,
+  ): WsSubscription {
+    return this.transport.subscribe(
+      "allBookTicker",
+      {},
+      (data) => {
+        cb(toArray(data).map((d) => parseWsBookTicker(d as WireRecord)));
+      },
+      undefined,
+      options,
+    );
   }
 
   /** Subscribe to mark price for specific symbols (perps only). */
   subscribeMarkPrice(
     params: { symbols: string[]; pushIntervalMs?: TickerPushIntervalMs },
     cb: (price: MarkPriceTicker) => void,
-  ): () => void {
+    options?: WsSubscriptionOptions,
+  ): WsSubscription {
     const allowed = new Set(params.symbols);
     return this.transport.subscribe(
       "markPrice",
@@ -160,20 +195,24 @@ export class PerpsWsClient {
           if (allowed.has(String(rec.s))) cb(parseWsMarkPrice(rec));
         }
       },
+      undefined,
+      options,
     );
   }
 
   /** Subscribe to mark prices for all symbols (perps only). */
   subscribeAllMarkPrices(
     cb: (prices: MarkPriceTicker[]) => void,
-    opts?: { pushIntervalMs?: TickerPushIntervalMs },
-  ): () => void {
+    opts?: WsSubscriptionOptions & { pushIntervalMs?: TickerPushIntervalMs },
+  ): WsSubscription {
     return this.transport.subscribe(
       "allMarkPrice",
       { pushInterval: pushIntervalToWire(opts?.pushIntervalMs) },
       (data) => {
         cb(toArray(data).map((d) => parseWsMarkPrice(d as WireRecord)));
       },
+      undefined,
+      opts,
     );
   }
 
@@ -186,14 +225,24 @@ export class PerpsWsClient {
    * per block and only when price or margin ratio changes — there is no
    * client `pushInterval`.
    */
-  subscribeCoinPrice(params: { coins: string[] }, cb: (price: WsCoinPrice) => void): () => void {
+  subscribeCoinPrice(
+    params: { coins: string[] },
+    cb: (price: WsCoinPrice) => void,
+    options?: WsSubscriptionOptions,
+  ): WsSubscription {
     const allowed = new Set(params.coins);
-    return this.transport.subscribe("coinPrice", { coins: params.coins }, (data) => {
-      for (const item of toArray(data)) {
-        const rec = item as WireRecord;
-        if (allowed.has(String(rec.a))) cb(parseWsCoinPrice(rec));
-      }
-    });
+    return this.transport.subscribe(
+      "coinPrice",
+      { coins: params.coins },
+      (data) => {
+        for (const item of toArray(data)) {
+          const rec = item as WireRecord;
+          if (allowed.has(String(rec.a))) cb(parseWsCoinPrice(rec));
+        }
+      },
+      undefined,
+      options,
+    );
   }
 
   /**
@@ -202,16 +251,26 @@ export class PerpsWsClient {
    * coins whose price or margin ratio changed, so the callback receives a
    * partial list per push (the initial snapshot carries every coin).
    */
-  subscribeAllCoinPrices(cb: (prices: WsCoinPrice[]) => void): () => void {
-    return this.transport.subscribe("allCoinPrice", {}, (data) => {
-      cb(toArray(data).map((d) => parseWsCoinPrice(d as WireRecord)));
-    });
+  subscribeAllCoinPrices(
+    cb: (prices: WsCoinPrice[]) => void,
+    options?: WsSubscriptionOptions,
+  ): WsSubscription {
+    return this.transport.subscribe(
+      "allCoinPrice",
+      {},
+      (data) => {
+        cb(toArray(data).map((d) => parseWsCoinPrice(d as WireRecord)));
+      },
+      undefined,
+      options,
+    );
   }
 
   subscribeL2Book(
     params: { symbol: string; tickSize: string; pushIntervalMs?: BookPushIntervalMs },
     cb: (book: WsOrderBook) => void,
-  ): () => void {
+    options?: WsSubscriptionOptions,
+  ): WsSubscription {
     const sym = params.symbol;
     return this.transport.subscribe(
       "l2Book",
@@ -224,13 +283,15 @@ export class PerpsWsClient {
         cb(parseWsOrderBook(data as WireRecord));
       },
       (data) => String((data as WireRecord).s) === sym,
+      options,
     );
   }
 
   subscribeL4Book(
     params: { symbol: string; level?: number },
     cb: (book: WsOrderBook | WsOrderBookUpdate, type: "snapshot" | "update") => void,
-  ): () => void {
+    options?: WsSubscriptionOptions,
+  ): WsSubscription {
     const sym = params.symbol;
     return this.transport.subscribe(
       "l4Book",
@@ -241,13 +302,15 @@ export class PerpsWsClient {
         else cb(parseWsOrderBookUpdate(rec), type);
       },
       (data) => String((data as WireRecord).s) === sym,
+      options,
     );
   }
 
   subscribeCandle(
     params: { symbol: string; interval: KlineInterval; pushIntervalMs?: CandlePushIntervalMs },
     cb: (kline: Kline) => void,
-  ): () => void {
+    options?: WsSubscriptionOptions,
+  ): WsSubscription {
     const sym = params.symbol;
     const ivl = params.interval;
     return this.transport.subscribe(
@@ -264,17 +327,28 @@ export class PerpsWsClient {
         const rec = data as WireRecord;
         return String(rec.s) === sym && String(rec.i) === ivl;
       },
+      options,
     );
   }
 
-  subscribeTrade(params: { symbols: string[] }, cb: (trades: Trade[]) => void): () => void {
+  subscribeTrade(
+    params: { symbols: string[] },
+    cb: (trades: Trade[]) => void,
+    options?: WsSubscriptionOptions,
+  ): WsSubscription {
     const allowed = new Set(params.symbols);
-    return this.transport.subscribe("trade", { symbols: params.symbols }, (data) => {
-      const filtered = toArray(data)
-        .filter((d) => allowed.has(String((d as WireRecord).s)))
-        .map((d) => parseWsTrade(d as WireRecord));
-      if (filtered.length > 0) cb(filtered);
-    });
+    return this.transport.subscribe(
+      "trade",
+      { symbols: params.symbols },
+      (data) => {
+        const filtered = toArray(data)
+          .filter((d) => allowed.has(String((d as WireRecord).s)))
+          .map((d) => parseWsTrade(d as WireRecord));
+        if (filtered.length > 0) cb(filtered);
+      },
+      undefined,
+      options,
+    );
   }
 
   // -----------------------------------------------------------------------
@@ -293,25 +367,41 @@ export class PerpsWsClient {
     },
     onSnapshot: (snapshot: PerpsAccountSnapshot) => void,
     opts?: PerpsAccountSubscribeOptions,
-  ): () => void {
+  ): WsSubscription {
     if (this.accountUser && this.accountUser !== params.user) {
       throw new WsError(
-        `Cannot subscribe to account for "${params.user}" — this client already ` +
-          `has an account subscription for "${this.accountUser}". Use a separate ` +
-          `PerpsWsClient per user.`,
+        `Cannot subscribe to account for "${params.user}" — this client already has an account subscription for "${this.accountUser}". Use a separate PerpsWsClient per user.`,
       );
     }
     this.accountUser = params.user;
+    const accountRegistration = Symbol();
+    this.accountSubscriptions.add(accountRegistration);
 
-    const unsubs: Array<() => void> = [];
+    const subscriptions: WsSubscription[] = [];
+    const releaseAccount = () => {
+      if (!this.accountSubscriptions.delete(accountRegistration)) return;
+      if (this.accountSubscriptions.size === 0) this.accountUser = null;
+    };
+    let lifecycleFailed = false;
+    const lifecycleOptions: WsSubscriptionOptions = {
+      signal: opts?.signal,
+      onError: (error) => {
+        releaseAccount();
+        if (lifecycleFailed) return;
+        lifecycleFailed = true;
+        opts?.onError?.(error);
+      },
+    };
 
-    unsubs.push(
+    subscriptions.push(
       this.transport.subscribe(
         "accountState",
         { user: params.user, pushInterval: pushIntervalToWire(params.pushIntervalMs) },
         (data) => {
           onSnapshot(parsePerpsAccountSnapshot(data as WireRecord));
         },
+        undefined,
+        lifecycleOptions,
       ),
     );
 
@@ -320,18 +410,24 @@ export class PerpsWsClient {
     if (opts?.onBalanceUpdate || opts?.onTwapUpdate) {
       const onBalance = opts.onBalanceUpdate;
       const onTwap = opts.onTwapUpdate;
-      unsubs.push(
-        this.transport.subscribe("accountUpdate", { user: params.user }, (data) => {
-          const update = parseWsPerpsAccountUpdate(data as WireRecord);
-          if (onBalance) onBalance(update);
-          if (onTwap) onTwap(update.twaps);
-        }),
+      subscriptions.push(
+        this.transport.subscribe(
+          "accountUpdate",
+          { user: params.user },
+          (data) => {
+            const update = parseWsPerpsAccountUpdate(data as WireRecord);
+            if (onBalance) onBalance(update);
+            if (onTwap) onTwap(update.twaps);
+          },
+          undefined,
+          lifecycleOptions,
+        ),
       );
     }
 
     if (opts?.onOrderUpdate) {
       const cb = opts.onOrderUpdate;
-      unsubs.push(
+      subscriptions.push(
         this.transport.subscribe(
           "accountOrderUpdate",
           { user: params.user, symbols: params.symbols },
@@ -340,13 +436,15 @@ export class PerpsWsClient {
               cb(parseWsPerpsOrderUpdate(item as WireRecord));
             }
           },
+          undefined,
+          lifecycleOptions,
         ),
       );
     }
 
     if (opts?.onTrade) {
       const cb = opts.onTrade;
-      unsubs.push(
+      subscriptions.push(
         this.transport.subscribe(
           "accountTrade",
           { user: params.user, symbols: params.symbols },
@@ -355,26 +453,52 @@ export class PerpsWsClient {
               cb(parseWsPerpsAccountTrade(item as WireRecord));
             }
           },
+          undefined,
+          lifecycleOptions,
         ),
       );
     }
 
     if (opts?.onLiquidation) {
       const cb = opts.onLiquidation;
-      unsubs.push(
-        this.transport.subscribe("accountEvent", { user: params.user }, (data) => {
-          const rec = data as WireRecord;
-          if (rec.type === "liquidation") {
-            cb(parseWsLiquidationEvent(rec));
-          }
-        }),
+      subscriptions.push(
+        this.transport.subscribe(
+          "accountEvent",
+          { user: params.user },
+          (data) => {
+            const rec = data as WireRecord;
+            if (rec.type === "liquidation") {
+              cb(parseWsLiquidationEvent(rec));
+            }
+          },
+          undefined,
+          lifecycleOptions,
+        ),
       );
     }
 
-    return () => {
-      for (const unsub of unsubs) unsub();
-      this.accountUser = null;
+    const unsubscribe = async (): Promise<void> => {
+      try {
+        await Promise.all(subscriptions.map((subscription) => subscription.unsubscribe()));
+      } finally {
+        releaseAccount();
+      }
     };
+    const handle = (() => {
+      void unsubscribe().catch((error) => this.transport.events.emit("error", { error }));
+    }) as WsSubscription;
+    const ready = Promise.all(subscriptions.map((subscription) => subscription.ready))
+      .then(() => undefined)
+      .catch((error) => {
+        releaseAccount();
+        throw error;
+      });
+    ready.catch(() => {});
+    Object.defineProperties(handle, {
+      ready: { value: ready, enumerable: true },
+      unsubscribe: { value: unsubscribe, enumerable: true },
+    });
+    return handle;
   }
 }
 

@@ -82,16 +82,27 @@ describeLive("live mainnet smoke — user and public", () => {
 
   // Validates live Gateway status, announcements, and address-scoped compatibility metadata.
   it("reads public and user metadata", async () => {
-    const [status, announcements, eligibility, apiKeys] = await Promise.all([
+    const [status, userStatus, announcements, eligibility, apiKeys] = await Promise.all([
       user.getSystemStatus(),
+      user.getUserStatus(userAddress),
       user.getAnnouncements({ page: 1, size: 1, lang: "en" }),
       user.getApiKeyEligibility(userAddress),
       user.getApiKeys(userAddress),
     ]);
     expect(typeof status).toBe("string");
+    expect(["Active", "UserNotFound"]).toContain(userStatus.status);
+    expect(typeof userStatus.userID).toBe("bigint");
     expect(Array.isArray(announcements.articles)).toBe(true);
     expect(typeof eligibility.eligible).toBe("boolean");
     expect(Array.isArray(apiKeys.spot)).toBe(true);
     expect(Array.isArray(apiKeys.perps)).toBe(true);
+  });
+
+  // Validates the current mainnet custody-address response is directly usable by a new integrator.
+  it("reads a live custody deposit address", async () => {
+    const address = await user.getDepositAddress(userAddress, "BASE_ETH");
+    expect(address.chain).toBe("BASE_ETH");
+    expect(address.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    expect(address.status).toBe("Enabled");
   });
 });

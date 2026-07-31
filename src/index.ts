@@ -2,6 +2,8 @@ export { SpotClient } from "./spot/client";
 export type { SpotClientOptions } from "./spot/client";
 export { SpotSigner } from "./spot/signer";
 export type { SpotSignerOptions } from "./spot/signer";
+export { waitForSpotBalanceChange } from "./spot/wait";
+export type { WaitForSpotBalanceChangeOptions } from "./spot/wait";
 export type {
   SpotAccountBalance,
   SpotAccountBalances,
@@ -51,6 +53,34 @@ export type {
 
 export { UserClient } from "./user/client";
 export type { UserClientOptions } from "./user/client";
+export {
+  LocalUserSigner,
+  TypedDataUserSigner,
+  buildAddApiKeyTypedData,
+  buildApproveBuilderFeeTypedData,
+  buildRevokeApiKeyTypedData,
+} from "./user/signer";
+export {
+  isTerminalTransferStatus,
+  waitForDeposit,
+  waitForDepositAddress,
+  waitForWithdrawal,
+} from "./user/wait";
+export type {
+  WaitForDepositAddressOptions,
+  WaitForTransferOptions,
+} from "./user/wait";
+export type {
+  BuiltDepositTransaction,
+  DepositAdapter,
+  DepositBuildInput,
+  DepositSubmission,
+} from "./user/deposit";
+export type {
+  LocalUserSignerOptions,
+  TypedDataUserSignerOptions,
+  UserSigner,
+} from "./user/signer";
 export type {
   AddUserApiKeyInput,
   AnnouncementArticle,
@@ -77,8 +107,11 @@ export type {
   UserBuilder,
   UserBuilders,
   UserDepositAddress,
+  UserDepositAddresses,
   UserFeeRate,
   UserSignedRequest,
+  UserStatus,
+  UserStatusCode,
   UserSubaccount,
   UserSubaccounts,
   UserTransactionQuota,
@@ -113,6 +146,25 @@ export {
   parseTwapOrderReceipt,
 } from "./common/types";
 export { getServerTime } from "./common/time";
+export {
+  createMonotonicNonce,
+  createNonceManager,
+  globalNonceManager,
+  nowMillis,
+  signerNonceKey,
+} from "./common/nonce";
+export type {
+  NonceManager,
+  NonceManagerOptions,
+  NonceProvider,
+} from "./common/nonce";
+export type { RetryOptions } from "./common/http";
+export {
+  WaitAbortedError,
+  WaitTimeoutError,
+  pollUntil,
+} from "./common/wait";
+export type { PollOptions } from "./common/wait";
 export type {
   CancelTwapOrderInput,
   ReplaceOrderInput,
@@ -151,4 +203,6 @@ export type {
   TickerPushIntervalMs,
   CandlePushIntervalMs,
   BookPushIntervalMs,
+  WsSubscription,
+  WsSubscriptionOptions,
 } from "./ws";

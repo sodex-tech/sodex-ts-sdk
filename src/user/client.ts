@@ -1,4 +1,6 @@
-import { HttpClient, type SignedHeaders } from "../common/http";
+import { HttpClient, type RetryOptions, type SignedHeaders } from "../common/http";
+import { globalNonceManager, signerNonceKey } from "../common/nonce";
+import type { UserSigner } from "./signer";
 import type {
   AddUserApiKeyInput,
   AnnouncementDetail,
@@ -18,8 +20,10 @@ import type {
   UserApiKeys,
   UserBuilders,
   UserDepositAddress,
+  UserDepositAddresses,
   UserFeeRate,
   UserSignedRequest,
+  UserStatus,
   UserSubaccounts,
   UserTransactionQuota,
 } from "./types";
@@ -27,20 +31,37 @@ import type {
 export interface UserClientOptions {
   baseUrl: string;
   fetch?: typeof fetch;
+  /** HTTP request timeout in milliseconds. Defaults to 10 seconds; `null` disables it. */
+  timeoutMs?: number | null;
+  /** Optional GET-only retry policy. Signed writes are never retried. */
+  retry?: boolean | RetryOptions;
 }
 
 export class UserClient {
   readonly http: HttpClient;
+  private readonly partnerHttp: HttpClient;
 
   constructor(opts: UserClientOptions) {
     this.http = new HttpClient({
       baseUrl: `${opts.baseUrl.replace(/\/$/, "")}/api/v1`,
       fetch: opts.fetch,
+      timeoutMs: opts.timeoutMs,
+      retry: opts.retry,
+    });
+    this.partnerHttp = new HttpClient({
+      baseUrl: `${opts.baseUrl.replace(/\/$/, "")}/api/v2`,
+      fetch: opts.fetch,
+      timeoutMs: opts.timeoutMs,
+      retry: opts.retry,
     });
   }
 
   getSystemStatus(): Promise<string> {
     return this.http.get("/status");
+  }
+
+  getUserStatus(userAddress: UserAddress): Promise<UserStatus> {
+    return this.http.get(`/user/${userAddress}/status`);
   }
 
   getTransferConfigs(coin?: string): Promise<CoinTransferConfig[]> {
@@ -66,11 +87,39 @@ export class UserClient {
     return this.http.get(`/user/${userAddress}/deposit-address`, { query: { chain } });
   }
 
+  /** Mainnet-only in current Gateway deployments. */
   createDepositAddress(
     userAddress: UserAddress,
     input: CreateDepositAddressInput,
   ): Promise<UserDepositAddress> {
     return this.http.post(`/user/${userAddress}/deposit-address`, { body: input });
+  }
+
+  /** Create custody addresses for every supported chain; mainnet-only. */
+  createDepositAddresses(userAddress: UserAddress): Promise<UserDepositAddresses> {
+    return this.http.post(`/user/${userAddress}/deposit-addresses`);
+  }
+
+  /** Partner-quota V2 address creation; mainnet-only. */
+  createPartnerDepositAddress(
+    userAddress: UserAddress,
+    input: CreateDepositAddressInput,
+    partnerApiKey: string,
+  ): Promise<UserDepositAddress> {
+    return this.partnerHttp.post(`/user/${userAddress}/deposit-address`, {
+      body: input,
+      headers: { "X-API-Key": partnerApiKey },
+    });
+  }
+
+  /** Partner-quota V2 all-chain address creation; mainnet-only. */
+  createPartnerDepositAddresses(
+    userAddress: UserAddress,
+    partnerApiKey: string,
+  ): Promise<UserDepositAddresses> {
+    return this.partnerHttp.post(`/user/${userAddress}/deposit-addresses`, {
+      headers: { "X-API-Key": partnerApiKey },
+    });
   }
 
   getDepositStatus(chain: string, txHash: string): Promise<DepositWithdrawalHistory> {
@@ -140,6 +189,23 @@ export class UserClient {
     });
   }
 
+  async addApiKeyWithSigner(
+    userAddress: UserAddress,
+    input: AddUserApiKeyInput,
+    signer: UserSigner,
+    nonce?: bigint,
+  ): Promise<void> {
+    assertUserSigner(userAddress, signer);
+    if (nonce !== undefined) {
+      return this.addApiKey(userAddress, input, await signer.signAddApiKey(input, nonce));
+    }
+    return (signer.nonceManager ?? globalNonceManager).run(
+      signer.nonceKey ?? signerNonceKey(signer.chainId, signer.address),
+      async (managedNonce) =>
+        this.addApiKey(userAddress, input, await signer.signAddApiKey(input, managedNonce)),
+    );
+  }
+
   revokeApiKey(
     userAddress: UserAddress,
     input: RevokeUserApiKeyInput,
@@ -149,6 +215,23 @@ export class UserClient {
       body: { accountID: input.accountId, name: input.name },
       signed: userSignedHeaders(signed),
     });
+  }
+
+  async revokeApiKeyWithSigner(
+    userAddress: UserAddress,
+    input: RevokeUserApiKeyInput,
+    signer: UserSigner,
+    nonce?: bigint,
+  ): Promise<void> {
+    assertUserSigner(userAddress, signer);
+    if (nonce !== undefined) {
+      return this.revokeApiKey(userAddress, input, await signer.signRevokeApiKey(input, nonce));
+    }
+    return (signer.nonceManager ?? globalNonceManager).run(
+      signer.nonceKey ?? signerNonceKey(signer.chainId, signer.address),
+      async (managedNonce) =>
+        this.revokeApiKey(userAddress, input, await signer.signRevokeApiKey(input, managedNonce)),
+    );
   }
 
   getBuilders(userAddress: UserAddress): Promise<UserBuilders> {
@@ -168,6 +251,31 @@ export class UserClient {
       },
       signed: userSignedHeaders(signed),
     });
+  }
+
+  async approveBuilderFeeWithSigner(
+    userAddress: UserAddress,
+    input: ApproveBuilderInput,
+    signer: UserSigner,
+    nonce?: bigint,
+  ): Promise<void> {
+    assertUserSigner(userAddress, signer);
+    if (nonce !== undefined) {
+      return this.approveBuilderFee(
+        userAddress,
+        input,
+        await signer.signApproveBuilderFee(input, nonce),
+      );
+    }
+    return (signer.nonceManager ?? globalNonceManager).run(
+      signer.nonceKey ?? signerNonceKey(signer.chainId, signer.address),
+      async (managedNonce) =>
+        this.approveBuilderFee(
+          userAddress,
+          input,
+          await signer.signApproveBuilderFee(input, managedNonce),
+        ),
+    );
   }
 
   getApiKeyEligibility(userAddress: UserAddress): Promise<ApiKeyEligibility> {
@@ -203,6 +311,12 @@ export class UserClient {
     return this.http.get(`/announcements/detail/${encodeURIComponent(id.toString())}`, {
       query: params,
     });
+  }
+}
+
+function assertUserSigner(userAddress: UserAddress, signer: UserSigner): void {
+  if (signer.address.toLowerCase() !== userAddress.toLowerCase()) {
+    throw new Error(`user signer ${signer.address} does not match ${userAddress}`);
   }
 }
 

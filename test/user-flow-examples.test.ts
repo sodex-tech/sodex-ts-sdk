@@ -44,29 +44,33 @@ describe("UserClient user flows", () => {
     );
   });
 
-  // Validates that uint64 deposit-address values are sent as JSON numbers, matching the Go handler.
-  it("serializes the signed deposit-address request with numeric nonce and deadline", async () => {
+  // Validates latest Gateway main accepts only chain for single-address creation and supports batch/partner creation.
+  it("maps current deposit-address creation endpoints", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(
+      .mockImplementation(async () =>
         jsonResponse(
           '{"code":0,"timestamp":1780000000000,"data":{"chain":"BASE_ETH","address":"0xabc","status":"Processing"}}',
         ),
       );
     const client = new UserClient({ baseUrl: "https://gateway.example/", fetch: fetchMock });
 
-    await client.createDepositAddress(USER_ADDRESS, {
-      chain: "BASE_ETH",
-      nonce: 123n,
-      deadline: 1780000000n,
-      signature: `0x${"11".repeat(65)}`,
-    });
+    await client.createDepositAddress(USER_ADDRESS, { chain: "BASE_ETH" });
+    await client.createDepositAddresses(USER_ADDRESS);
+    await client.createPartnerDepositAddress(USER_ADDRESS, { chain: "BASE_ETH" }, "partner-key");
+    await client.createPartnerDepositAddresses(USER_ADDRESS, "partner-key");
 
-    const init = fetchMock.mock.calls[0]?.[1];
-    const body = JSON.parse(String(init?.body));
-    expect(body).toMatchObject({ chain: "BASE_ETH", nonce: 123, deadline: 1780000000 });
-    expect(typeof body.nonce).toBe("number");
-    expect(init?.headers).toMatchObject({ Accept: "application/json" });
+    expect(fetchMock.mock.calls.map(([url, init]) => [String(url), init?.method])).toEqual([
+      [`https://gateway.example/api/v1/user/${USER_ADDRESS}/deposit-address`, "POST"],
+      [`https://gateway.example/api/v1/user/${USER_ADDRESS}/deposit-addresses`, "POST"],
+      [`https://gateway.example/api/v2/user/${USER_ADDRESS}/deposit-address`, "POST"],
+      [`https://gateway.example/api/v2/user/${USER_ADDRESS}/deposit-addresses`, "POST"],
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      chain: "BASE_ETH",
+    });
+    expect(fetchMock.mock.calls[2]?.[1]?.headers).toMatchObject({ "X-API-Key": "partner-key" });
+    expect(fetchMock.mock.calls[3]?.[1]?.headers).toMatchObject({ "X-API-Key": "partner-key" });
   });
 
   // Validates withdrawal status lookup and exact preservation of uint64 withdrawal identifiers.
@@ -128,6 +132,30 @@ describe("UserClient user flows", () => {
 
     await expect(client.getTransferConfigs("USDC")).rejects.toThrow(
       /HTTP 403 from GET .*<!DOCTYPE html>/,
+    );
+  });
+
+  // Validates the latest Gateway user-status endpoint and exact uint64 user ID decoding.
+  it("queries whether a wallet is registered", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(`{
+        "code": 0,
+        "timestamp": 1780000000000,
+        "data": {
+          "status": "Active",
+          "userID": 18446744073709551615
+        }
+      }`),
+    );
+    const client = new UserClient({ baseUrl: "https://gateway.example", fetch: fetchMock });
+
+    await expect(client.getUserStatus(USER_ADDRESS)).resolves.toEqual({
+      status: "Active",
+      userID: 18446744073709551615n,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://gateway.example/api/v1/user/${USER_ADDRESS}/status`,
+      expect.objectContaining({ method: "GET" }),
     );
   });
 
@@ -210,6 +238,41 @@ describe("UserClient user flows", () => {
       name: "bot",
       type: 1,
       expiresAt: 0,
+    });
+  });
+
+  // Validates signer convenience methods create and attach unified signatures without manual header assembly.
+  it("signs unified writes through a UserSigner", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse('{"code":0,"timestamp":1780000000000,"data":null}'));
+    const client = new UserClient({ baseUrl: "https://gateway.example", fetch: fetchMock });
+    const signer = {
+      address: USER_ADDRESS,
+      chainId: 286623n,
+      signAddApiKey: vi.fn().mockResolvedValue({
+        signature: `0x${"11".repeat(66)}`,
+        nonce: 1780000000000n,
+        chainId: 286623n,
+      }),
+      signRevokeApiKey: vi.fn(),
+      signApproveBuilderFee: vi.fn(),
+    };
+    const input = {
+      accountId: 1001n,
+      name: "bot",
+      type: "EVM" as const,
+      publicKey: "0x2222222222222222222222222222222222222222" as const,
+      expiresAt: 0n,
+    };
+
+    await client.addApiKeyWithSigner(USER_ADDRESS, input, signer, 1780000000000n);
+
+    expect(signer.signAddApiKey).toHaveBeenCalledWith(input, 1780000000000n);
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "X-API-Sign": `0x${"11".repeat(66)}`,
+      "X-API-Nonce": "1780000000000",
+      "X-API-Chain": "286623",
     });
   });
 });

@@ -17,7 +17,35 @@ export const WITHDRAW_TOKEN_TARGET: Address = "0x441BDb33C7d6DC49f627a42c3d71671
 export const ERC20_ABI = parseAbi([
   "function approve(address spender, uint256 amount) returns (bool)",
   "function balanceOf(address owner) view returns (uint256)",
+  "function transfer(address to, uint256 amount) returns (bool)",
 ]);
+
+export interface EvmCustodyDepositInput {
+  walletClient: WalletClient;
+  depositAddress: Address;
+  tokenAddress: Address;
+  amount: bigint;
+}
+
+/** Submit a direct source-chain native/ERC20 transfer to a custody address. */
+export async function sendEvmCustodyDeposit(input: EvmCustodyDepositInput): Promise<Hash> {
+  if (input.tokenAddress.toLowerCase() === ZERO_ADDRESS) {
+    return input.walletClient.sendTransaction({
+      account: input.walletClient.account ?? null,
+      chain: input.walletClient.chain ?? null,
+      to: input.depositAddress,
+      value: input.amount,
+    } as any);
+  }
+  return input.walletClient.writeContract({
+    address: input.tokenAddress,
+    abi: ERC20_ABI,
+    functionName: "transfer",
+    args: [input.depositAddress, input.amount],
+    account: input.walletClient.account ?? null,
+    chain: input.walletClient.chain ?? null,
+  } as any);
+}
 
 export const CALL_FOR_PERMIT_ABI = parseAbi([
   "function nonces(address owner, uint192 key) view returns (uint256)",

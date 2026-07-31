@@ -1,20 +1,36 @@
 /**
- * Discover a deposit route, create/query a custody address, and optionally
- * look up the resulting deposit by its source-chain transaction hash.
+ * Discover and execute a custody/bridge deposit, then query its source-chain
+ * transaction hash until Gateway sees it.
  *
- *   SODEX_PRIVATE_KEY=0x... pnpm tsx examples/user-flows/deposit.ts
- *   SODEX_DEPOSIT_ROUTE=bridge pnpm tsx examples/user-flows/deposit.ts
+ * Discovery only:
+ *   SODEX_USER_ADDRESS=0x... pnpm tsx examples/user-flows/deposit.ts
+ * Execute EVM custody transfer:
+ *   SODEX_PRIVATE_KEY=0x... SODEX_SOURCE_RPC=https://... \
+ *   SODEX_SOURCE_CHAIN_ID=8453 SODEX_AMOUNT=5 SODEX_SEND_DEPOSIT=1 \
+ *   pnpm tsx examples/user-flows/deposit.ts
  */
-import type { Address } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { PerpsClient, SpotClient, UserClient, type UserDepositAddress } from "../../src";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
-  CLOB_GATEWAY_ADDRESS,
+  type DepositAdapter,
+  type DepositBuildInput,
+  PerpsClient,
+  SpotClient,
+  UserClient,
+  type UserDepositAddress,
+  WaitTimeoutError,
+  waitForDeposit,
+  waitForDepositAddress,
+} from "@sodex/sdk";
+import { ZERO_ADDRESS, sendEvmCustodyDeposit } from "@sodex/sdk/evm";
+import { type Address, parseUnits } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import {
   gatewayUrl,
   optionalPrivateKey,
   parseChoice,
-  sleep,
-  sodexChainId,
+  requireEnv,
+  sourceChainClients,
 } from "./config";
 
 const ADDRESS_STATUSES = ["Enabled", "Processing", "Suspicious"] as const;
@@ -25,16 +41,10 @@ async function main() {
   const routeType = parseChoice("SODEX_DEPOSIT_ROUTE", "custody", ["custody", "bridge"]);
   const gateway = new UserClient({ baseUrl: gatewayUrl });
   const { asset, route } = await gateway.getTransferRoute(coin, chain);
-
-  const spot = new SpotClient({ baseUrl: gatewayUrl });
-  const perps = new PerpsClient({ baseUrl: gatewayUrl });
-  const [spotCoins, perpsCoins] = await Promise.all([spot.getCoins(), perps.getCoins()]);
-  const spotCoin = asset.name
-    ? spotCoins.find((candidate) => candidate.name === asset.name)
-    : undefined;
-  const perpsCoin = asset.name
-    ? perpsCoins.find((candidate) => candidate.name === asset.name)
-    : undefined;
+  const [spotCoins, perpsCoins] = await Promise.all([
+    new SpotClient({ baseUrl: gatewayUrl }).getCoins(),
+    new PerpsClient({ baseUrl: gatewayUrl }).getCoins(),
+  ]);
 
   console.log("Selected deposit route:", {
     coin: asset.coin,
@@ -48,83 +58,84 @@ async function main() {
     custodyAvailable: !route.custodyDisabled,
     bridgeAvailable: route.bridgeAddress !== "",
     bridgeAddress: route.bridgeAddress || undefined,
-    spotCoinId: spotCoin?.id,
-    perpsCoinId: perpsCoin?.id,
+    spotCoinId: asset.name
+      ? spotCoins.find((candidate) => candidate.name === asset.name)?.id
+      : undefined,
+    perpsCoinId: asset.name
+      ? perpsCoins.find((candidate) => candidate.name === asset.name)?.id
+      : undefined,
   });
 
-  if (routeType === "bridge") {
-    if (!route.bridgeAddress) {
-      throw new Error(`bridge deposit is unavailable for ${asset.coin}/${route.chain}`);
-    }
-    console.log(
-      `Bridge route selected. Send ${asset.coin} through ${route.bridgeAddress} on ` +
-        `${route.chain}; source-chain transaction construction is owned by that bridge, not this SDK.`,
-    );
-  } else {
+  const existingTxHash = process.env.SODEX_DEPOSIT_TX_HASH;
+  if (existingTxHash) {
+    await printDepositStatus(gateway, route.chain, existingTxHash);
+    return;
+  }
+
+  const userAddress = resolveUserAddress();
+  let userDepositAddress: UserDepositAddress | undefined;
+  let destination: string;
+  if (routeType === "custody") {
     if (route.custodyDisabled) {
       throw new Error(`custody deposit is disabled for ${asset.coin}/${route.chain}`);
     }
-    const address = await ensureCustodyAddress(gateway, route.chain);
-    console.log("Custody deposit address:", address);
+    userDepositAddress = await ensureCustodyAddress(gateway, userAddress, route.chain);
+    destination = userDepositAddress.address;
+    console.log("Custody deposit address:", userDepositAddress);
+  } else {
+    if (!route.bridgeAddress) {
+      throw new Error(`bridge deposit is unavailable for ${asset.coin}/${route.chain}`);
+    }
+    destination = route.bridgeAddress;
+    console.log("Bridge contract:", destination);
   }
 
-  const txHash = process.env.SODEX_DEPOSIT_TX_HASH;
-  if (txHash) {
-    const status = await gateway.getDepositStatus(route.chain, txHash);
-    console.log(`Deposit status matches: ${status.total}`, status.records);
-  } else {
-    console.log("Set SODEX_DEPOSIT_TX_HASH after sending funds to query deposit status.");
+  const amount = process.env.SODEX_AMOUNT;
+  if (!amount) {
+    console.log("Set SODEX_AMOUNT and SODEX_SEND_DEPOSIT=1 to submit the source-chain transfer.");
+    return;
   }
+  if (process.env.SODEX_SEND_DEPOSIT !== "1") {
+    throw new Error("set SODEX_SEND_DEPOSIT=1 to authorize broadcasting the deposit transaction");
+  }
+
+  const rawAmount = parseUnits(amount, Number(asset.decimals));
+  const minimum = parseUnits(route.minDepositAmount || "0", Number(asset.decimals));
+  if (rawAmount < minimum) {
+    throw new Error(`amount is below the ${route.minDepositAmount} ${asset.coin} minimum`);
+  }
+  const buildInput: DepositBuildInput = {
+    asset,
+    route,
+    routeType,
+    amount,
+    rawAmount,
+    destination,
+    userDepositAddress,
+  };
+  const txHash = process.env.SODEX_DEPOSIT_ADAPTER
+    ? await submitWithAdapter(buildInput)
+    : await submitBuiltInEvmCustody(buildInput);
+  console.log("Source-chain deposit submitted:", txHash);
+  await printDepositStatus(gateway, route.chain, txHash, true);
 }
 
 async function ensureCustodyAddress(
   gateway: UserClient,
+  userAddress: Address,
   chain: string,
 ): Promise<UserDepositAddress> {
-  const privateKey = optionalPrivateKey("SODEX_PRIVATE_KEY");
-  const signer = privateKey ? privateKeyToAccount(privateKey) : undefined;
-  const userAddress = (process.env.SODEX_USER_ADDRESS ?? signer?.address) as Address | undefined;
-  if (!userAddress) {
-    throw new Error("SODEX_USER_ADDRESS or SODEX_PRIVATE_KEY is required for custody deposits");
-  }
-  if (signer && signer.address.toLowerCase() !== userAddress.toLowerCase()) {
-    throw new Error("SODEX_USER_ADDRESS must match SODEX_PRIVATE_KEY when creating an address");
-  }
-
   let address = await gateway.getDepositAddress(userAddress, chain);
   if (!address.address && !address.status) {
-    if (!signer) {
-      throw new Error("deposit address does not exist; set SODEX_PRIVATE_KEY to create it");
-    }
-    const nonce = BigInt(Date.now());
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 15 * 60);
-    const signature = await signer.signTypedData({
-      domain: {
-        name: "universal",
-        version: "1",
-        chainId: sodexChainId,
-        verifyingContract: CLOB_GATEWAY_ADDRESS,
-      },
-      types: {
-        CreateDepositAddress: [
-          { name: "nonce", type: "uint64" },
-          { name: "deadline", type: "uint64" },
-          { name: "chain", type: "string" },
-        ],
-      },
-      primaryType: "CreateDepositAddress",
-      message: { nonce, deadline, chain },
-    });
-    address = await gateway.createDepositAddress(userAddress, {
-      chain,
-      nonce,
-      deadline,
-      signature,
-    });
+    const partnerApiKey = process.env.SODEX_PARTNER_API_KEY;
+    address = partnerApiKey
+      ? await gateway.createPartnerDepositAddress(userAddress, { chain }, partnerApiKey)
+      : await gateway.createDepositAddress(userAddress, { chain });
   }
-
   if (address.status === "Processing") {
-    address = await waitForDepositAddress(gateway, userAddress, chain);
+    address = await waitForDepositAddress(gateway, userAddress, chain, {
+      timeoutMs: waitTimeoutMs(),
+    });
   }
   if (address.status === "Suspicious") {
     throw new Error("custody deposit address is Suspicious and must not be used");
@@ -141,19 +152,90 @@ async function ensureCustodyAddress(
   return address;
 }
 
-async function waitForDepositAddress(
-  gateway: UserClient,
-  userAddress: Address,
-  chain: string,
-): Promise<UserDepositAddress> {
-  const timeoutMs = Number(process.env.SODEX_WAIT_SECONDS ?? "120") * 1_000;
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    await sleep(3_000);
-    const address = await gateway.getDepositAddress(userAddress, chain);
-    if (address.status !== "Processing") return address;
+async function submitBuiltInEvmCustody(input: DepositBuildInput): Promise<string> {
+  if (input.routeType !== "custody") {
+    throw new Error(
+      "bridge execution requires SODEX_DEPOSIT_ADAPTER; see DepositAdapter in @sodex/sdk/user",
+    );
   }
-  throw new Error(`timed out waiting for the ${chain} custody deposit address`);
+  const sourcePrivateKey =
+    optionalPrivateKey("SODEX_SOURCE_PRIVATE_KEY") ?? optionalPrivateKey("SODEX_PRIVATE_KEY");
+  if (!sourcePrivateKey) {
+    throw new Error("SODEX_SOURCE_PRIVATE_KEY or SODEX_PRIVATE_KEY is required");
+  }
+  const tokenAddress =
+    process.env.SODEX_SOURCE_NATIVE === "true"
+      ? ZERO_ADDRESS
+      : asAddress(input.route.coinAddress, "transfer config coinAddress");
+  const depositAddress = asAddress(input.destination, "custody deposit address");
+  const { publicClient, walletClient } = sourceChainClients(sourcePrivateKey);
+  const txHash = await sendEvmCustodyDeposit({
+    walletClient,
+    depositAddress,
+    tokenAddress,
+    amount: input.rawAmount,
+  });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+  if (receipt.status !== "success") throw new Error(`source-chain transaction reverted: ${txHash}`);
+  return txHash;
+}
+
+async function submitWithAdapter(input: DepositBuildInput): Promise<string> {
+  const specifier = requireEnv("SODEX_DEPOSIT_ADAPTER");
+  const moduleSpecifier =
+    specifier.startsWith(".") || specifier.startsWith("/")
+      ? pathToFileURL(resolve(specifier)).href
+      : specifier;
+  const loaded = await import(moduleSpecifier);
+  const adapter = (loaded.depositAdapter ?? loaded.default) as DepositAdapter | undefined;
+  if (!adapter || typeof adapter.buildDeposit !== "function") {
+    throw new Error(
+      "deposit adapter must export default or named depositAdapter with buildDeposit()",
+    );
+  }
+  const transaction = await adapter.buildDeposit(input);
+  const submission = await transaction.submit();
+  return submission.txHash;
+}
+
+async function printDepositStatus(
+  gateway: UserClient,
+  chain: string,
+  txHash: string,
+  poll = false,
+): Promise<void> {
+  if (!poll) {
+    const status = await gateway.getDepositStatus(chain, txHash);
+    console.log(`Deposit status matches: ${status.total}`, status.records);
+    return;
+  }
+  try {
+    const status = await waitForDeposit(gateway, chain, txHash, {
+      timeoutMs: waitTimeoutMs(),
+      intervalMs: 5_000,
+    });
+    console.log(`Deposit status matches: ${status.total}`, status.records);
+  } catch (error) {
+    if (!(error instanceof WaitTimeoutError)) throw error;
+    console.log(`Deposit is not indexed yet. Re-run with SODEX_DEPOSIT_TX_HASH=${txHash}`);
+  }
+}
+
+function waitTimeoutMs(): number {
+  return Number(process.env.SODEX_WAIT_SECONDS ?? "120") * 1_000;
+}
+
+function resolveUserAddress(): Address {
+  const configured = process.env.SODEX_USER_ADDRESS;
+  if (configured) return asAddress(configured, "SODEX_USER_ADDRESS");
+  const privateKey = optionalPrivateKey("SODEX_PRIVATE_KEY");
+  if (!privateKey) throw new Error("SODEX_USER_ADDRESS or SODEX_PRIVATE_KEY is required");
+  return privateKeyToAccount(privateKey).address;
+}
+
+function asAddress(value: string, name: string): Address {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(value)) throw new Error(`${name} must be an EVM address`);
+  return value as Address;
 }
 
 main().catch((error) => {

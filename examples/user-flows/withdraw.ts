@@ -1,3 +1,21 @@
+import {
+  PerpsClient,
+  PerpsSigner,
+  SpotClient,
+  SpotSigner,
+  UserClient,
+  WaitTimeoutError,
+  waitForSpotBalanceChange,
+  waitForWithdrawal,
+} from "@sodex/sdk";
+import {
+  CALL_FOR_PERMIT_ABI,
+  CALL_FOR_PERMIT_ADDRESS,
+  WITHDRAW_TOKEN_TARGET,
+  encodeWithdrawCommand,
+  getEvmBalance,
+  waitForEvmBalanceIncrease,
+} from "@sodex/sdk/evm";
 /**
  * Move funds to ValueChain when needed, sign a WithdrawToken permit, submit
  * the gas-sponsored withdrawal, and poll its external-chain status.
@@ -7,15 +25,6 @@
  */
 import { parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { PerpsClient, PerpsSigner, SpotClient, SpotSigner, UserClient } from "../../src";
-import {
-  CALL_FOR_PERMIT_ABI,
-  CALL_FOR_PERMIT_ADDRESS,
-  WITHDRAW_TOKEN_TARGET,
-  encodeWithdrawCommand,
-  getEvmBalance,
-  waitForEvmBalanceIncrease,
-} from "../../src/evm";
 import {
   TREASURY_ACCOUNT_ID,
   gatewayUrl,
@@ -23,7 +32,6 @@ import {
   parseChoice,
   requireEnv,
   requirePrivateKey,
-  sleep,
   valueChainClients,
 } from "./config";
 
@@ -120,6 +128,7 @@ async function main() {
         masterAccount.address,
         valueChainAsset,
         previousSpotBalance,
+        { timeoutMs: waitTimeoutMs() },
       );
     }
 
@@ -141,7 +150,7 @@ async function main() {
       account.address,
       asset.tokenAddress,
       previousEvmBalance,
-      Number(process.env.SODEX_WAIT_SECONDS ?? "120") * 1_000,
+      waitTimeoutMs(),
     );
   }
 
@@ -183,7 +192,26 @@ async function main() {
     signature,
   });
   console.log("Withdrawal submitted (not final):", submission);
-  await pollWithdrawal(gateway, route.chain, submission.txHash);
+  try {
+    const history = await waitForWithdrawal(
+      gateway,
+      route.chain,
+      { txHash: submission.txHash },
+      {
+        timeoutMs: waitTimeoutMs(),
+        intervalMs: 5_000,
+        onUpdate(update) {
+          if (update.total > 0n) console.log("Withdrawal progress:", update.records);
+        },
+      },
+    );
+    console.log("Withdrawal completed:", history.records);
+  } catch (error) {
+    if (!(error instanceof WaitTimeoutError)) throw error;
+    console.log(
+      `Withdrawal is still pending or not indexed. Re-run with SODEX_WITHDRAW_TX_HASH=${submission.txHash}`,
+    );
+  }
 }
 
 async function resolveAccountId(spot: SpotClient, userAddress: `0x${string}`): Promise<bigint> {
@@ -203,38 +231,8 @@ async function getSpotBalance(
   return state.balances.find((balance) => balance.coin === coin)?.total;
 }
 
-async function waitForSpotBalanceChange(
-  spot: SpotClient,
-  userAddress: `0x${string}`,
-  coin: string,
-  previousBalance: string | undefined,
-): Promise<void> {
-  const deadline = Date.now() + Number(process.env.SODEX_WAIT_SECONDS ?? "120") * 1_000;
-  while (Date.now() < deadline) {
-    await sleep(3_000);
-    const balance = await getSpotBalance(spot, userAddress, coin);
-    if (balance !== previousBalance) return;
-  }
-  throw new Error("timed out waiting for the Perps -> Spot transfer");
-}
-
-async function pollWithdrawal(gateway: UserClient, chain: string, txHash: string) {
-  const deadline = Date.now() + Number(process.env.SODEX_WAIT_SECONDS ?? "120") * 1_000;
-  while (Date.now() < deadline) {
-    const history = await gateway.getWithdrawStatus(chain, { txHash });
-    if (history.total > 0) {
-      console.log("Withdrawal progress:", history.records);
-      if (history.records.some((record) => isTerminalStatus(record.status))) return;
-    }
-    await sleep(5_000);
-  }
-  console.log(
-    `Withdrawal is still pending or not indexed. Re-run with SODEX_WITHDRAW_TX_HASH=${txHash}`,
-  );
-}
-
-function isTerminalStatus(status: string): boolean {
-  return ["success", "failed", "rejected", "cancelled", "canceled"].includes(status.toLowerCase());
+function waitTimeoutMs(): number {
+  return Number(process.env.SODEX_WAIT_SECONDS ?? "120") * 1_000;
 }
 
 main().catch((error) => {
