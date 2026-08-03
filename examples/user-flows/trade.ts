@@ -15,6 +15,7 @@ import {
   SpotClient,
   SpotSigner,
   SpotWsClient,
+  UserClient,
 } from "@sodex/sdk";
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -40,6 +41,11 @@ async function main() {
   }
   const signingAccount = privateKeyToAccount(signingPrivateKey);
   const userAddress = resolveUserAddress(apiPrivateKey, masterPrivateKey, signingAccount.address);
+  const userStatus = await new UserClient({ baseUrl: gatewayUrl }).getUserStatus(userAddress);
+  if (userStatus.status !== "Active") {
+    throw new Error(`Sodex user is not active: ${userStatus.status}`);
+  }
+  console.log("Gateway user status:", userStatus);
   const apiKeyName = apiPrivateKey ? requireEnv("SODEX_API_KEY_NAME") : "default";
   const clOrdId = process.env.SODEX_CLIENT_ORDER_ID ?? `sdk-flow-${Date.now()}`;
 

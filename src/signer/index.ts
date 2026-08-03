@@ -45,15 +45,5 @@ export {
 } from "../common/nonce";
 export { SpotSigner } from "../spot/signer";
 export { PerpsSigner } from "../perps/signer";
-export {
-  LocalUserSigner,
-  TypedDataUserSigner,
-  buildAddApiKeyTypedData,
-  buildApproveBuilderFeeTypedData,
-  buildRevokeApiKeyTypedData,
-} from "../user/signer";
-export type {
-  LocalUserSignerOptions,
-  TypedDataUserSignerOptions,
-  UserSigner,
-} from "../user/signer";
+export { LocalUserSigner } from "../user/signer";
+export type { LocalUserSignerOptions, UserSigner } from "../user/signer";

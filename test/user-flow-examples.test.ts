@@ -44,7 +44,7 @@ describe("UserClient user flows", () => {
     );
   });
 
-  // Validates latest Gateway main accepts only chain for single-address creation and supports batch/partner creation.
+  // Validates the deposit example's single-address and partner-quota creation endpoints.
   it("maps current deposit-address creation endpoints", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -56,21 +56,16 @@ describe("UserClient user flows", () => {
     const client = new UserClient({ baseUrl: "https://gateway.example/", fetch: fetchMock });
 
     await client.createDepositAddress(USER_ADDRESS, { chain: "BASE_ETH" });
-    await client.createDepositAddresses(USER_ADDRESS);
     await client.createPartnerDepositAddress(USER_ADDRESS, { chain: "BASE_ETH" }, "partner-key");
-    await client.createPartnerDepositAddresses(USER_ADDRESS, "partner-key");
 
     expect(fetchMock.mock.calls.map(([url, init]) => [String(url), init?.method])).toEqual([
       [`https://gateway.example/api/v1/user/${USER_ADDRESS}/deposit-address`, "POST"],
-      [`https://gateway.example/api/v1/user/${USER_ADDRESS}/deposit-addresses`, "POST"],
       [`https://gateway.example/api/v2/user/${USER_ADDRESS}/deposit-address`, "POST"],
-      [`https://gateway.example/api/v2/user/${USER_ADDRESS}/deposit-addresses`, "POST"],
     ]);
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       chain: "BASE_ETH",
     });
-    expect(fetchMock.mock.calls[2]?.[1]?.headers).toMatchObject({ "X-API-Key": "partner-key" });
-    expect(fetchMock.mock.calls[3]?.[1]?.headers).toMatchObject({ "X-API-Key": "partner-key" });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({ "X-API-Key": "partner-key" });
   });
 
   // Validates withdrawal status lookup and exact preservation of uint64 withdrawal identifiers.
@@ -93,8 +88,8 @@ describe("UserClient user flows", () => {
     expect(result.records[0]?.withdrawId).toBe(18446744073709551615n);
   });
 
-  // Validates the remaining deposit/withdraw lifecycle methods and their Gateway HTTP verbs.
-  it("maps deposit address, status, history, and withdrawal submission endpoints", async () => {
+  // Validates the deposit/withdraw example methods and their Gateway HTTP verbs.
+  it("maps deposit address, status, and withdrawal submission endpoints", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockImplementation(async () =>
@@ -104,7 +99,6 @@ describe("UserClient user flows", () => {
 
     await client.getDepositAddress(USER_ADDRESS, "BASE_ETH");
     await client.getDepositStatus("BASE_ETH", "0xdeposit");
-    await client.getTransferHistory(USER_ADDRESS, { side: "withdraw", pending: true, limit: 10 });
     await client.submitEvmWithdraw(USER_ADDRESS, {
       cmdData: "0x1234",
       nonce: "7",
@@ -115,10 +109,6 @@ describe("UserClient user flows", () => {
     expect(fetchMock.mock.calls.map(([url, init]) => [String(url), init?.method])).toEqual([
       [`https://gateway.example/api/v1/user/${USER_ADDRESS}/deposit-address?chain=BASE_ETH`, "GET"],
       ["https://gateway.example/api/v1/user/deposit/status?chain=BASE_ETH&txHash=0xdeposit", "GET"],
-      [
-        `https://gateway.example/api/v1/user/${USER_ADDRESS}/deposit-withdrawals?limit=10&side=withdraw&pending=true`,
-        "GET",
-      ],
       [`https://gateway.example/api/v1/user/${USER_ADDRESS}/evm-withdraw`, "POST"],
     ]);
   });
@@ -159,40 +149,8 @@ describe("UserClient user flows", () => {
     );
   });
 
-  // Validates every P0 read endpoint maps to Gateway main without path or query drift.
-  it("covers user metadata, system status, and announcement reads", async () => {
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockImplementation(async () =>
-        jsonResponse('{"code":0,"timestamp":1780000000000,"data":{}}'),
-      );
-    const client = new UserClient({ baseUrl: "https://gateway.example", fetch: fetchMock });
-
-    await client.getSystemStatus();
-    await client.getApiKeys(USER_ADDRESS, "bot");
-    await client.getBuilders(USER_ADDRESS);
-    await client.getApiKeyEligibility(USER_ADDRESS);
-    await client.getFeeRate(USER_ADDRESS, "perps", "BTC-USD");
-    await client.getRateLimit(USER_ADDRESS);
-    await client.getSubaccounts(USER_ADDRESS);
-    await client.getAnnouncements({ page: 2, size: 10, lang: "zh" });
-    await client.getAnnouncementDetail(42n, { lang: "en", plainText: true });
-
-    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
-      "https://gateway.example/api/v1/status",
-      `https://gateway.example/api/v1/user/${USER_ADDRESS}/api-keys?name=bot`,
-      `https://gateway.example/api/v1/user/${USER_ADDRESS}/builders`,
-      `https://gateway.example/api/v1/user/${USER_ADDRESS}/api-key-eligibility`,
-      `https://gateway.example/api/v1/user/${USER_ADDRESS}/fee-rate?market=perps&symbol=BTC-USD`,
-      `https://gateway.example/api/v1/user/${USER_ADDRESS}/ratelimit`,
-      `https://gateway.example/api/v1/user/${USER_ADDRESS}/subaccounts`,
-      "https://gateway.example/api/v1/announcements?page=2&size=10&lang=zh",
-      "https://gateway.example/api/v1/announcements/detail/42?lang=en&plainText=true",
-    ]);
-  });
-
-  // Validates wallet-authorized writes send signature headers without an engine API-key header.
-  it("covers unified API-key and builder writes", async () => {
+  // Validates API-key registration sends wallet signature headers without an engine API-key header.
+  it("maps the unified API-key registration write", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockImplementation(async () =>
@@ -216,15 +174,8 @@ describe("UserClient user flows", () => {
       },
       signed,
     );
-    await client.revokeApiKey(USER_ADDRESS, { accountId: 1001n, name: "bot" }, signed);
-    await client.approveBuilderFee(
-      USER_ADDRESS,
-      { accountId: 1001n, builderId: 2002n, maxFeeRate: 20n },
-      signed,
-    );
-
     const requests = fetchMock.mock.calls.map(([, init]) => init);
-    expect(requests.map((request) => request?.method)).toEqual(["POST", "DELETE", "POST"]);
+    expect(requests.map((request) => request?.method)).toEqual(["POST"]);
     for (const request of requests) {
       expect(request?.headers).toMatchObject({
         "X-API-Sign": signed.signature,
@@ -255,8 +206,6 @@ describe("UserClient user flows", () => {
         nonce: 1780000000000n,
         chainId: 286623n,
       }),
-      signRevokeApiKey: vi.fn(),
-      signApproveBuilderFee: vi.fn(),
     };
     const input = {
       accountId: 1001n,

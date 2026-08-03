@@ -46,20 +46,13 @@ export type {
   PerpsNewOrderInput,
   PerpsNewTwapOrderInput,
   PerpsOrderItem,
-  UpdateCollateralInput,
   UpdateLeverageInput,
   UpdateMarginInput,
 } from "./perps/actions";
 
 export { UserClient } from "./user/client";
 export type { UserClientOptions } from "./user/client";
-export {
-  LocalUserSigner,
-  TypedDataUserSigner,
-  buildAddApiKeyTypedData,
-  buildApproveBuilderFeeTypedData,
-  buildRevokeApiKeyTypedData,
-} from "./user/signer";
+export { LocalUserSigner } from "./user/signer";
 export {
   isTerminalTransferStatus,
   waitForDeposit,
@@ -78,18 +71,11 @@ export type {
 } from "./user/deposit";
 export type {
   LocalUserSignerOptions,
-  TypedDataUserSignerOptions,
   UserSigner,
 } from "./user/signer";
 export type {
   AddUserApiKeyInput,
-  AnnouncementArticle,
-  AnnouncementDetail,
-  AnnouncementLanguage,
-  AnnouncementList,
   ApiKeyBuilderInput,
-  ApiKeyEligibility,
-  ApproveBuilderInput,
   ChainTransferConfig,
   CoinTransferConfig,
   CreateDepositAddressInput,
@@ -98,23 +84,12 @@ export type {
   EvmWithdrawRequest,
   EvmWithdrawSubmission,
   HexString,
-  RevokeUserApiKeyInput,
-  TransferHistoryFilters,
   UserAddress,
-  UserApiKey,
-  UserApiKeys,
   UserApiKeyType,
-  UserBuilder,
-  UserBuilders,
   UserDepositAddress,
-  UserDepositAddresses,
-  UserFeeRate,
   UserSignedRequest,
   UserStatus,
   UserStatusCode,
-  UserSubaccount,
-  UserSubaccounts,
-  UserTransactionQuota,
 } from "./user/types";
 
 export * from "./common/enums";

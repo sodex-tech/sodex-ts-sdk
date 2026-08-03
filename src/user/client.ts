@@ -3,29 +3,16 @@ import { globalNonceManager, signerNonceKey } from "../common/nonce";
 import type { UserSigner } from "./signer";
 import type {
   AddUserApiKeyInput,
-  AnnouncementDetail,
-  AnnouncementLanguage,
-  AnnouncementList,
-  ApiKeyEligibility,
-  ApproveBuilderInput,
   ChainTransferConfig,
   CoinTransferConfig,
   CreateDepositAddressInput,
   DepositWithdrawalHistory,
   EvmWithdrawRequest,
   EvmWithdrawSubmission,
-  RevokeUserApiKeyInput,
-  TransferHistoryFilters,
   UserAddress,
-  UserApiKeys,
-  UserBuilders,
   UserDepositAddress,
-  UserDepositAddresses,
-  UserFeeRate,
   UserSignedRequest,
   UserStatus,
-  UserSubaccounts,
-  UserTransactionQuota,
 } from "./types";
 
 export interface UserClientOptions {
@@ -54,10 +41,6 @@ export class UserClient {
       timeoutMs: opts.timeoutMs,
       retry: opts.retry,
     });
-  }
-
-  getSystemStatus(): Promise<string> {
-    return this.http.get("/status");
   }
 
   getUserStatus(userAddress: UserAddress): Promise<UserStatus> {
@@ -95,11 +78,6 @@ export class UserClient {
     return this.http.post(`/user/${userAddress}/deposit-address`, { body: input });
   }
 
-  /** Create custody addresses for every supported chain; mainnet-only. */
-  createDepositAddresses(userAddress: UserAddress): Promise<UserDepositAddresses> {
-    return this.http.post(`/user/${userAddress}/deposit-addresses`);
-  }
-
   /** Partner-quota V2 address creation; mainnet-only. */
   createPartnerDepositAddress(
     userAddress: UserAddress,
@@ -108,16 +86,6 @@ export class UserClient {
   ): Promise<UserDepositAddress> {
     return this.partnerHttp.post(`/user/${userAddress}/deposit-address`, {
       body: input,
-      headers: { "X-API-Key": partnerApiKey },
-    });
-  }
-
-  /** Partner-quota V2 all-chain address creation; mainnet-only. */
-  createPartnerDepositAddresses(
-    userAddress: UserAddress,
-    partnerApiKey: string,
-  ): Promise<UserDepositAddresses> {
-    return this.partnerHttp.post(`/user/${userAddress}/deposit-addresses`, {
       headers: { "X-API-Key": partnerApiKey },
     });
   }
@@ -138,34 +106,11 @@ export class UserClient {
     });
   }
 
-  getTransferHistory(
-    userAddress: UserAddress,
-    filters: TransferHistoryFilters = {},
-  ): Promise<DepositWithdrawalHistory> {
-    return this.http.get(`/user/${userAddress}/deposit-withdrawals`, {
-      query: {
-        start: filters.start,
-        startTime: filters.startTime,
-        endTime: filters.endTime,
-        limit: filters.limit,
-        side: filters.side,
-        token: filters.token,
-        pending: filters.pending,
-        chain: filters.chain,
-        coinSymbol: filters.coinSymbol,
-      },
-    });
-  }
-
   submitEvmWithdraw(
     userAddress: UserAddress,
     request: EvmWithdrawRequest,
   ): Promise<EvmWithdrawSubmission> {
     return this.http.post(`/user/${userAddress}/evm-withdraw`, { body: request });
-  }
-
-  getApiKeys(userAddress: UserAddress, name?: string): Promise<UserApiKeys> {
-    return this.http.get(`/user/${userAddress}/api-keys`, { query: { name } });
   }
 
   addApiKey(
@@ -204,113 +149,6 @@ export class UserClient {
       async (managedNonce) =>
         this.addApiKey(userAddress, input, await signer.signAddApiKey(input, managedNonce)),
     );
-  }
-
-  revokeApiKey(
-    userAddress: UserAddress,
-    input: RevokeUserApiKeyInput,
-    signed: UserSignedRequest,
-  ): Promise<void> {
-    return this.http.del(`/user/${userAddress}/api-keys`, {
-      body: { accountID: input.accountId, name: input.name },
-      signed: userSignedHeaders(signed),
-    });
-  }
-
-  async revokeApiKeyWithSigner(
-    userAddress: UserAddress,
-    input: RevokeUserApiKeyInput,
-    signer: UserSigner,
-    nonce?: bigint,
-  ): Promise<void> {
-    assertUserSigner(userAddress, signer);
-    if (nonce !== undefined) {
-      return this.revokeApiKey(userAddress, input, await signer.signRevokeApiKey(input, nonce));
-    }
-    return (signer.nonceManager ?? globalNonceManager).run(
-      signer.nonceKey ?? signerNonceKey(signer.chainId, signer.address),
-      async (managedNonce) =>
-        this.revokeApiKey(userAddress, input, await signer.signRevokeApiKey(input, managedNonce)),
-    );
-  }
-
-  getBuilders(userAddress: UserAddress): Promise<UserBuilders> {
-    return this.http.get(`/user/${userAddress}/builders`);
-  }
-
-  approveBuilderFee(
-    userAddress: UserAddress,
-    input: ApproveBuilderInput,
-    signed: UserSignedRequest,
-  ): Promise<void> {
-    return this.http.post(`/user/${userAddress}/builders`, {
-      body: {
-        accountID: input.accountId,
-        builderID: input.builderId,
-        maxFeeRate: input.maxFeeRate,
-      },
-      signed: userSignedHeaders(signed),
-    });
-  }
-
-  async approveBuilderFeeWithSigner(
-    userAddress: UserAddress,
-    input: ApproveBuilderInput,
-    signer: UserSigner,
-    nonce?: bigint,
-  ): Promise<void> {
-    assertUserSigner(userAddress, signer);
-    if (nonce !== undefined) {
-      return this.approveBuilderFee(
-        userAddress,
-        input,
-        await signer.signApproveBuilderFee(input, nonce),
-      );
-    }
-    return (signer.nonceManager ?? globalNonceManager).run(
-      signer.nonceKey ?? signerNonceKey(signer.chainId, signer.address),
-      async (managedNonce) =>
-        this.approveBuilderFee(
-          userAddress,
-          input,
-          await signer.signApproveBuilderFee(input, managedNonce),
-        ),
-    );
-  }
-
-  getApiKeyEligibility(userAddress: UserAddress): Promise<ApiKeyEligibility> {
-    return this.http.get(`/user/${userAddress}/api-key-eligibility`);
-  }
-
-  getFeeRate(
-    userAddress: UserAddress,
-    market: "spot" | "perps",
-    symbol?: string,
-  ): Promise<UserFeeRate> {
-    return this.http.get(`/user/${userAddress}/fee-rate`, { query: { market, symbol } });
-  }
-
-  getRateLimit(userAddress: UserAddress): Promise<UserTransactionQuota> {
-    return this.http.get(`/user/${userAddress}/ratelimit`);
-  }
-
-  getSubaccounts(userAddress: UserAddress): Promise<UserSubaccounts> {
-    return this.http.get(`/user/${userAddress}/subaccounts`);
-  }
-
-  getAnnouncements(
-    params: { page?: number; size?: number; lang?: AnnouncementLanguage } = {},
-  ): Promise<AnnouncementList> {
-    return this.http.get("/announcements", { query: params });
-  }
-
-  getAnnouncementDetail(
-    id: bigint | number | string,
-    params: { lang?: AnnouncementLanguage; plainText?: boolean } = {},
-  ): Promise<AnnouncementDetail> {
-    return this.http.get(`/announcements/detail/${encodeURIComponent(id.toString())}`, {
-      query: params,
-    });
   }
 }
 

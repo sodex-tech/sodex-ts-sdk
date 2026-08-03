@@ -108,7 +108,7 @@ export class TypedDataSigner implements Signer {
  * Recovery normalization: external signers emit `v` as either 0/1 or
  * 27/28. Sodex wire stores 0/1.
  */
-export function wireSigFromExternal(sigHex: string, signatureType = SIG_TYPE_EIP712): Uint8Array {
+export function wireSigFromExternal(sigHex: string): Uint8Array {
   const bytes = hexToBytes(sigHex);
   if (bytes.length !== 65) {
     throw new InvalidSignatureError(
@@ -127,7 +127,7 @@ export function wireSigFromExternal(sigHex: string, signatureType = SIG_TYPE_EIP
     );
   }
   const out = new Uint8Array(WIRE_SIG_LENGTH);
-  out[0] = signatureType;
+  out[0] = SIG_TYPE_EIP712;
   out.set(bytes.subarray(0, 64), 1);
   out[65] = recovery;
   return out;

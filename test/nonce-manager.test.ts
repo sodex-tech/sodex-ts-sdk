@@ -136,10 +136,7 @@ describe("NonceManager", () => {
       chainId: common.chainId,
       nonceManager: manager,
       nonceKey: signerNonceKey(common.chainId, SIGNER_ADDRESS),
-      async signAddApiKey() {
-        throw new Error("not used");
-      },
-      async signRevokeApiKey(_input, nonce) {
+      async signAddApiKey(_input, nonce) {
         observedNonces.push(nonce!);
         return {
           signature: `0x${"00".repeat(66)}`,
@@ -147,16 +144,19 @@ describe("NonceManager", () => {
           chainId: common.chainId,
         };
       },
-      async signApproveBuilderFee() {
-        throw new Error("not used");
-      },
     };
 
     const first = spot.revokeApiKey({ accountId: 1n, name: "bot" });
     const second = perps.revokeApiKey({ accountId: 1n, name: "bot" });
-    const third = user.revokeApiKeyWithSigner(
+    const third = user.addApiKeyWithSigner(
       SIGNER_ADDRESS,
-      { accountId: 1n, name: "bot" },
+      {
+        accountId: 1n,
+        name: "bot",
+        type: "EVM",
+        publicKey: SIGNER_ADDRESS,
+        expiresAt: 0n,
+      },
       userSigner,
     );
 

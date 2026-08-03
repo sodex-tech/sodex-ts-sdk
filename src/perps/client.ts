@@ -90,7 +90,6 @@ import {
   type RevokeApiKeyInput,
   type ScheduleCancelInput,
   type TransferAssetInput,
-  type UpdateCollateralInput,
   type UpdateLeverageInput,
   type UpdateMarginInput,
   buildCancelTwapPayload,
@@ -102,7 +101,6 @@ import {
   buildRevokeApiKeyPayload,
   buildScheduleCancelPayload,
   buildTransferAssetPayload,
-  buildUpdateCollateralPayload,
   buildUpdateLeveragePayload,
   buildUpdateMarginPayload,
 } from "./actions";
@@ -526,14 +524,6 @@ export class PerpsClient {
       symbolId: this.symbols.resolveId(symbol),
     });
     await this.signedPost("/trade/margin", payload);
-  }
-
-  async updateCollateral(
-    input: Omit<UpdateCollateralInput, "coinId"> & { coin: string | bigint },
-  ): Promise<void> {
-    const { coin, ...rest } = input;
-    const coinId = typeof coin === "bigint" ? coin : this.coins.resolveId(coin);
-    await this.signedPost("/trade/collateral", buildUpdateCollateralPayload({ ...rest, coinId }));
   }
 
   async transferAsset(

@@ -131,7 +131,7 @@ pnpm tsx examples/user-flows/deposit.ts
 If no custody address exists, the script creates one and uses the SDK's
 `waitForDepositAddress` helper until it becomes usable. Deposit-address APIs
 are currently mainnet-only. Partner integrations may set
-`SODEX_PARTNER_API_KEY`; the SDK also exposes batch creation methods.
+`SODEX_PARTNER_API_KEY` for partner-quota address creation.
 
 Submit an EVM custody transfer:
 
@@ -257,9 +257,8 @@ pnpm tsx examples/user-flows/register-api-key.ts
 key. `SODEX_API_KEY_PERMISSIONS` registers a permissioned key. These modes are
 mutually exclusive.
 
-The example uses `LocalUserSigner`. Browser, MPC, or custody wallets can use
-`TypedDataUserSigner`; the SDK also exports typed-data builders for projects
-that own the signing transport.
+The example uses `LocalUserSigner` and never exposes the master key outside the
+local signing process.
 
 **Success means:** registration completed for both Spot and Perps. The example
 never prints or persists private key material.
@@ -307,7 +306,7 @@ the execution source of truth.
 | --- | --- |
 | Supported deposit/withdraw tokens and chains | `getTransferConfigs` / `getTransferRoute` in deposit and withdrawal examples |
 | Custody vs bridge | Selected and validated independently |
-| Query/create custody address | Deposit example plus batch/partner SDK methods |
+| Query/create custody address | Deposit example plus partner-quota creation |
 | Deposit status by source-chain hash | Deposit example and `waitForDeposit` |
 | Spot/Perps -> EVM before withdrawal | Withdrawal example |
 | Submit and resume withdrawal tracking | Withdrawal example and `waitForWithdrawal` |

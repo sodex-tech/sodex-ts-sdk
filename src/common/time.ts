@@ -1,5 +1,5 @@
 import { TransportError } from "./errors";
-import { HttpClient, type RetryOptions } from "./http";
+import { HttpClient } from "./http";
 
 /**
  * Fetch server time from the gateway-level `GET /api/v1/time` endpoint.
@@ -14,18 +14,11 @@ import { HttpClient, type RetryOptions } from "./http";
  */
 export async function getServerTime(
   baseUrl: string,
-  opts: {
-    fetch?: typeof fetch;
-    signal?: AbortSignal;
-    timeoutMs?: number | null;
-    retry?: boolean | RetryOptions;
-  } = {},
+  opts: { fetch?: typeof fetch; signal?: AbortSignal } = {},
 ): Promise<bigint> {
   const http = new HttpClient({
     baseUrl: `${baseUrl.replace(/\/$/, "")}/api/v1`,
     fetch: opts.fetch,
-    timeoutMs: opts.timeoutMs,
-    retry: opts.retry,
   });
   const envelope = await http.getEnvelope<never>("/time", { signal: opts.signal });
   // Type says `timestamp` is always present; distrust the wire anyway — a

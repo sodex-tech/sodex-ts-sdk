@@ -114,15 +114,12 @@ scheduleCancel, transferAsset, addApiKey, revokeApiKey.
 Perps (~20): all of the above minus `transferAsset` swap semantics plus mark
 prices, positions, position history, funding history; signed writes include
 placeOrders, cancelOrders, replaceOrders, modifyOrder, scheduleCancel,
-updateLeverage, updateMargin, updateCollateral, transferAsset, addApiKey,
-revokeApiKey.
+updateLeverage, updateMargin, transferAsset, addApiKey, revokeApiKey.
 
-Gateway user/public: transfer configuration and route discovery, custody
-deposit-address query/single/batch/partner creation, deposit and withdrawal
-status/history, sponsored EVM withdrawal submission, unified API keys/builders
-with local or external-wallet signing, API-key eligibility, fee rate,
-transaction quota, subaccounts, wallet registration status, system status,
-and announcements through `UserClient`.
+Gateway user flows: wallet registration status, transfer configuration and
+route discovery, custody deposit-address query/single/partner creation,
+deposit and withdrawal status, sponsored EVM withdrawal submission, and
+unified API-key registration through `UserClient`.
 
 Gateway: `getServerTime(baseUrl)` — standalone function (the endpoint lives
 at the gateway root `/api/v1/time`, outside both clients' path prefixes);
