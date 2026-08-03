@@ -35,6 +35,7 @@ try {
         devDependencies: {
           "@types/node": "^20.12.0",
           "@types/ws": "^8.5.13",
+          tsx: "^4.19.0",
           typescript: "^5.5.4",
         },
       },
@@ -54,11 +55,21 @@ try {
     { cwd: tempRoot, stdio: "inherit" },
   );
 
+  execFileSync(
+    join(tempRoot, "node_modules", ".bin", "tsx"),
+    [join(installedExamples, "user-flows", "deposit.ts")],
+    {
+      cwd: tempRoot,
+      env: { ...process.env, SODEX_EXAMPLE_DRY_RUN: "1" },
+      stdio: "inherit",
+    },
+  );
+
   const depositSource = readFileSync(join(installedExamples, "user-flows", "deposit.ts"), "utf8");
   if (!depositSource.includes('from "@sodex/sdk"')) {
     throw new Error("published examples do not import the package as a consumer");
   }
-  console.log("Packed @sodex/sdk examples typecheck in a clean consumer project.");
+  console.log("Packed @sodex/sdk examples typecheck and run in a clean consumer project.");
 } finally {
   rmSync(tempRoot, { recursive: true, force: true });
 }

@@ -39,6 +39,11 @@ import {
 const ADDRESS_STATUSES = ["Enabled", "Processing", "Suspicious"] as const;
 
 async function main() {
+  if (process.env.SODEX_EXAMPLE_DRY_RUN === "1") {
+    console.log("SoDEX deposit example loaded successfully.");
+    return;
+  }
+
   const coin = process.env.SODEX_COIN ?? "USDC";
   const chain = process.env.SODEX_CHAIN ?? "BASE_ETH";
   const routeType = parseChoice("SODEX_DEPOSIT_ROUTE", "custody", ["custody", "bridge"]);
@@ -77,6 +82,10 @@ async function main() {
     return;
   }
 
+  const amount = process.env.SODEX_AMOUNT;
+  const createAddress =
+    process.env.SODEX_CREATE_DEPOSIT_ADDRESS === "1" ||
+    (Boolean(amount) && process.env.SODEX_SEND_DEPOSIT === "1");
   const userAddress = resolveUserAddress();
   let userDepositAddress: UserDepositAddress | undefined;
   let destination: string;
@@ -86,7 +95,18 @@ async function main() {
     if (route.custodyDisabled) {
       throw new Error(`custody deposit is disabled for ${asset.coin}/${route.chain}`);
     }
-    userDepositAddress = await ensureCustodyAddress(gateway, userAddress, route.chain);
+    userDepositAddress = await ensureCustodyAddress(
+      gateway,
+      userAddress,
+      route.chain,
+      createAddress,
+    );
+    if (!userDepositAddress) {
+      console.log(
+        "No custody deposit address exists. Set SODEX_CREATE_DEPOSIT_ADDRESS=1 to create one.",
+      );
+      return;
+    }
     destination = userDepositAddress.address;
     console.log("Custody deposit address:", userDepositAddress);
   } else {
@@ -97,7 +117,6 @@ async function main() {
     console.log("Bridge contract:", destination);
   }
 
-  const amount = process.env.SODEX_AMOUNT;
   if (!amount) {
     console.log("Set SODEX_AMOUNT and SODEX_SEND_DEPOSIT=1 to submit the source-chain transfer.");
     return;
@@ -135,9 +154,11 @@ async function ensureCustodyAddress(
   gateway: UserClient,
   userAddress: Address,
   chain: string,
-): Promise<UserDepositAddress> {
+  createIfMissing: boolean,
+): Promise<UserDepositAddress | undefined> {
   let address = await gateway.getDepositAddress(userAddress, chain);
   if (!address.address && !address.status) {
+    if (!createIfMissing) return undefined;
     const partnerApiKey = process.env.SODEX_PARTNER_API_KEY;
     address = partnerApiKey
       ? await gateway.createPartnerDepositAddress(userAddress, { chain }, partnerApiKey)

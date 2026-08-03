@@ -3,7 +3,7 @@ import { WaitAbortedError, WaitTimeoutError, pollUntil } from "../src/common/wai
 import type { SpotClient } from "../src/spot/client";
 import { waitForSpotBalanceChange } from "../src/spot/wait";
 import type { UserClient } from "../src/user/client";
-import { waitForDeposit, waitForWithdrawal } from "../src/user/wait";
+import { isSuccessfulTransferStatus, waitForDeposit, waitForWithdrawal } from "../src/user/wait";
 
 describe("workflow wait helpers", () => {
   // Validates that deposit polling returns the first indexed record and reports every successful observation.
@@ -25,12 +25,23 @@ describe("workflow wait helpers", () => {
     expect(onUpdate).toHaveBeenCalledTimes(2);
   });
 
-  // Validates that withdrawal polling ignores non-terminal records and accepts the Gateway's terminal status casing.
-  it("waits for a terminal withdrawal status", async () => {
+  // Validates withdrawal polling waits for every returned record to become terminal before resolving.
+  it("waits for all withdrawal records to reach a terminal status", async () => {
     const processing = { records: [{ status: "Processing" }], total: 1n };
-    const succeeded = { records: [{ status: "Success" }], total: 1n };
+    const partiallyFinished = {
+      records: [{ status: "Success" }, { status: "Processing" }],
+      total: 2n,
+    };
+    const succeeded = {
+      records: [{ status: "Success" }, { status: "Succeeded" }],
+      total: 2n,
+    };
     const client = {
-      getWithdrawStatus: vi.fn().mockResolvedValueOnce(processing).mockResolvedValueOnce(succeeded),
+      getWithdrawStatus: vi
+        .fn()
+        .mockResolvedValueOnce(processing)
+        .mockResolvedValueOnce(partiallyFinished)
+        .mockResolvedValueOnce(succeeded),
     } as unknown as UserClient;
 
     await expect(
@@ -41,6 +52,14 @@ describe("workflow wait helpers", () => {
         { intervalMs: 0, timeoutMs: 1_000 },
       ),
     ).resolves.toBe(succeeded);
+  });
+
+  // Validates successful withdrawal statuses stay distinct from terminal failure outcomes.
+  it("classifies only successful terminal withdrawal statuses as successful", () => {
+    expect(isSuccessfulTransferStatus("Success")).toBe(true);
+    expect(isSuccessfulTransferStatus("succeeded")).toBe(true);
+    expect(isSuccessfulTransferStatus("Failed")).toBe(false);
+    expect(isSuccessfulTransferStatus("Cancelled")).toBe(false);
   });
 
   // Validates the spot helper waits for both a changed balance and optional account activation.
@@ -64,6 +83,32 @@ describe("workflow wait helpers", () => {
         timeoutMs: 1_000,
       }),
     ).resolves.toBe(active);
+  });
+
+  // Validates callers can ignore unrelated balance changes until the expected credit is visible.
+  it("waits for the caller's expected spot balance", async () => {
+    const unrelatedChange = {
+      accountId: 7n,
+      balances: [{ coin: "USDC", total: "9" }],
+    };
+    const expectedCredit = {
+      accountId: 7n,
+      balances: [{ coin: "USDC", total: "12" }],
+    };
+    const client = {
+      getAccountState: vi
+        .fn()
+        .mockResolvedValueOnce(unrelatedChange)
+        .mockResolvedValueOnce(expectedCredit),
+    } as unknown as SpotClient;
+
+    await expect(
+      waitForSpotBalanceChange(client, "0xuser", "USDC", "10", {
+        isExpectedBalance: (balance) => balance === "12",
+        intervalMs: 0,
+        timeoutMs: 1_000,
+      }),
+    ).resolves.toBe(expectedCredit);
   });
 
   // Validates that an unmet condition exits with a typed timeout instead of looping forever.

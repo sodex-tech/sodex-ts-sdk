@@ -54,6 +54,7 @@ export { UserClient } from "./user/client";
 export type { UserClientOptions } from "./user/client";
 export { LocalUserSigner } from "./user/signer";
 export {
+  isSuccessfulTransferStatus,
   isTerminalTransferStatus,
   waitForDeposit,
   waitForDepositAddress,

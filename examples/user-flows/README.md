@@ -84,10 +84,17 @@ pnpm typecheck:examples
 From another project:
 
 ```bash
-npm install @sodex/sdk viem ws
+# Use @sodex/sdk after its first npm publish. During pre-release, use:
+npm install github:sodex-tech/sodex-ts-sdk#main viem ws
 npm install --save-dev tsx typescript @types/node @types/ws
 npx tsc -p node_modules/@sodex/sdk/examples/user-flows/tsconfig.json
+SODEX_EXAMPLE_DRY_RUN=1 \
+  npx tsx node_modules/@sodex/sdk/examples/user-flows/deposit.ts
 ```
+
+Commands below use paths from an SDK repository checkout. In an installed
+consumer project, run the same files from
+`node_modules/@sodex/sdk/examples/user-flows/` as shown above.
 
 The examples default to SoDEX mainnet:
 
@@ -118,7 +125,7 @@ Custody and bridge are separate routes:
   own transaction shape, the example requires an explicit `DepositAdapter`
   instead of guessing a contract call.
 
-Read-only route and address discovery:
+Read-only route and existing-address discovery:
 
 ```bash
 export SODEX_USER_ADDRESS=0x...
@@ -128,9 +135,12 @@ export SODEX_DEPOSIT_ROUTE=custody
 pnpm tsx examples/user-flows/deposit.ts
 ```
 
-If no custody address exists, the script creates one and uses the SDK's
-`waitForDepositAddress` helper until it becomes usable. Deposit-address APIs
-are currently mainnet-only. Partner integrations may set
+If no custody address exists, the read-only command prints an instruction and
+exits. Set `SODEX_CREATE_DEPOSIT_ADDRESS=1` to authorize creating one; the
+script then uses the SDK's `waitForDepositAddress` helper until it becomes
+usable. `SODEX_SEND_DEPOSIT=1` also authorizes creation when an amount is set,
+because the address is required by that explicitly authorized deposit.
+Deposit-address APIs are currently mainnet-only. Partner integrations may set
 `SODEX_PARTNER_API_KEY` for partner-quota address creation.
 
 Submit an EVM custody transfer:
@@ -236,9 +246,10 @@ SODEX_CHAIN=BASE_ETH SODEX_WITHDRAW_TX_HASH=0x... \
 
 `SODEX_WITHDRAW_ID` can be used instead of the transaction hash.
 
-**Success means:** Gateway submission returns a ValueChain transaction hash,
-but funds are not final until the status record reaches a terminal state such
-as `Success`/`Succeeded`, `Failed`, `Rejected`, or `Cancelled`.
+Gateway submission returns a ValueChain transaction hash, but funds are not
+final until every returned status record is terminal. Only
+`Success`/`Succeeded` is success; the example exits with an error for `Failed`,
+`Rejected`, or `Cancelled`.
 
 ### 4. Register an API key
 

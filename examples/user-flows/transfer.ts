@@ -94,6 +94,11 @@ async function main() {
       amount,
       accountActivated: previousSpotState.accountId !== 0n,
     });
+    const previousRawBalance = previousSpotBalance
+      ? parseUnits(previousSpotBalance, Number(asset.decimals))
+      : 0n;
+    const expectedRawBalance =
+      previousRawBalance + parseUnits(creditedAmount, Number(asset.decimals));
     const state = await waitForSpotBalanceChange(
       spot,
       userAddress,
@@ -102,6 +107,12 @@ async function main() {
       {
         timeoutMs: Number(process.env.SODEX_WAIT_SECONDS ?? "120") * 1_000,
         requireActiveAccount: true,
+        isExpectedBalance(balance) {
+          return (
+            balance !== undefined &&
+            parseUnits(balance, Number(asset.decimals)) >= expectedRawBalance
+          );
+        },
       },
     );
     console.log("Deposit credited to Spot:", {
@@ -212,7 +223,10 @@ async function depositFromEvm(input: {
       functionName: "approve",
       args: [CLOB_GATEWAY_ADDRESS, rawAmount],
     });
-    await publicClient.waitForTransactionReceipt({ hash: approveHash });
+    const approveReceipt = await publicClient.waitForTransactionReceipt({ hash: approveHash });
+    if (approveReceipt.status !== "success") {
+      throw new Error(`ERC20 approval reverted: ${approveHash}`);
+    }
     console.log("ERC20 approval confirmed:", approveHash);
   } else {
     console.log("SOSO uses the native token path; no ERC20 approval is required.");
@@ -224,7 +238,10 @@ async function depositFromEvm(input: {
     amount: rawAmount,
     value: input.tokenAddress.toLowerCase() === ZERO_ADDRESS ? rawAmount : undefined,
   });
-  await publicClient.waitForTransactionReceipt({ hash: depositHash });
+  const depositReceipt = await publicClient.waitForTransactionReceipt({ hash: depositHash });
+  if (depositReceipt.status !== "success") {
+    throw new Error(`EVM -> Spot deposit reverted: ${depositHash}`);
+  }
   console.log("EVM -> Spot deposit confirmed on ValueChain:", depositHash);
   console.log(
     input.tokenAddress.toLowerCase() === ZERO_ADDRESS

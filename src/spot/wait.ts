@@ -6,6 +6,8 @@ export interface WaitForSpotBalanceChangeOptions extends PollOptions<SpotAccount
   accountId?: bigint;
   /** Also require the account to be activated (`accountId !== 0`). */
   requireActiveAccount?: boolean;
+  /** Optionally require the observed balance to match the caller's expected credit/debit. */
+  isExpectedBalance?: (balance: string | undefined, state: SpotAccountSnapshot) => boolean;
 }
 
 /** Wait until one spot balance differs from a previously observed value. */
@@ -22,7 +24,9 @@ export function waitForSpotBalanceChange(
     (state) => {
       const balance = state.balances.find((candidate) => candidate.coin === coin)?.total;
       return (
-        balance !== previousBalance && (!options.requireActiveAccount || state.accountId !== 0n)
+        balance !== previousBalance &&
+        (!options.requireActiveAccount || state.accountId !== 0n) &&
+        (!options.isExpectedBalance || options.isExpectedBalance(balance, state))
       );
     },
     options,

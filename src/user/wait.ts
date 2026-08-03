@@ -13,6 +13,7 @@ const TERMINAL_TRANSFER_STATUSES = new Set([
   "cancelled",
   "canceled",
 ]);
+const SUCCESSFUL_TRANSFER_STATUSES = new Set(["success", "succeeded"]);
 
 /** Wait until custody address creation leaves the empty/Processing state. */
 export function waitForDepositAddress(
@@ -54,11 +55,17 @@ export function waitForWithdrawal(
   return pollUntil(
     `withdrawal ${reference.withdrawId ?? reference.txHash ?? ""}`,
     () => client.getWithdrawStatus(chain, reference),
-    (history) => history.records.some((record) => isTerminalTransferStatus(record.status)),
+    (history) =>
+      history.records.length > 0 &&
+      history.records.every((record) => isTerminalTransferStatus(record.status)),
     options,
   );
 }
 
 export function isTerminalTransferStatus(status: string): boolean {
   return TERMINAL_TRANSFER_STATUSES.has(status.toLowerCase());
+}
+
+export function isSuccessfulTransferStatus(status: string): boolean {
+  return SUCCESSFUL_TRANSFER_STATUSES.has(status.toLowerCase());
 }

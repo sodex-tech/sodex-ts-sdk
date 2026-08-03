@@ -16,6 +16,7 @@ import {
   SpotSigner,
   UserClient,
   WaitTimeoutError,
+  isSuccessfulTransferStatus,
   waitForSpotBalanceChange,
   waitForWithdrawal,
 } from "@sodex/sdk";
@@ -122,6 +123,10 @@ async function main() {
         masterAccount.address,
         valueChainAsset,
       );
+      const previousRawSpotBalance = previousSpotBalance
+        ? parseUnits(previousSpotBalance, Number(asset.decimals))
+        : 0n;
+      const expectedRawSpotBalance = previousRawSpotBalance + rawAmount;
       const receipt = await perps.transferAsset({
         fromAccountId: accountId,
         toAccountId: TREASURY_ACCOUNT_ID,
@@ -135,7 +140,15 @@ async function main() {
         masterAccount.address,
         valueChainAsset,
         previousSpotBalance,
-        { timeoutMs: waitTimeoutMs() },
+        {
+          timeoutMs: waitTimeoutMs(),
+          isExpectedBalance(balance) {
+            return (
+              balance !== undefined &&
+              parseUnits(balance, Number(asset.decimals)) >= expectedRawSpotBalance
+            );
+          },
+        },
       );
     }
 
@@ -217,7 +230,17 @@ async function main() {
         },
       },
     );
-    console.log("Withdrawal completed:", history.records);
+    const failedRecords = history.records.filter(
+      (record) => !isSuccessfulTransferStatus(record.status),
+    );
+    if (failedRecords.length > 0) {
+      throw new Error(
+        `Withdrawal failed with terminal status: ${failedRecords
+          .map((record) => record.status)
+          .join(", ")}`,
+      );
+    }
+    console.log("Withdrawal succeeded:", history.records);
   } catch (error) {
     if (!(error instanceof WaitTimeoutError)) throw error;
     console.log(

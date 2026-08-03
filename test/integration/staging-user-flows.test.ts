@@ -24,19 +24,17 @@ const selectedFlows = new Set(
 const writesAuthorized = process.env.SODEX_STAGING_ALLOW_WRITES === "I_UNDERSTAND";
 
 describeStaging("staging user flows", () => {
-  // Validates staging transfer config and custody address endpoints use schemas accepted by the current SDK.
-  it("discovers a route and resolves a deposit address", async () => {
+  // Validates staging transfer config and custody-address reads without provisioning external resources.
+  it("discovers a route and reads the current deposit address", async () => {
     if (!gatewayUrl || !userAddress) {
       throw new Error("SODEX_STAGING_GATEWAY and SODEX_USER_ADDRESS are required");
     }
     const client = new UserClient({ baseUrl: gatewayUrl });
     const { route } = await client.getTransferRoute(coin, chain);
-    let address = await client.getDepositAddress(userAddress, route.chain);
-    if (!address.address && !address.status) {
-      address = await client.createDepositAddress(userAddress, { chain: route.chain });
-    }
+    const address = await client.getDepositAddress(userAddress, route.chain);
     expect(address.chain).toBe(route.chain);
-    expect(address.status.length).toBeGreaterThan(0);
+    expect(typeof address.address).toBe("string");
+    expect(typeof address.status).toBe("string");
   });
 
   // Validates a known real deposit hash can be followed through Gateway indexing without broadcasting funds.
