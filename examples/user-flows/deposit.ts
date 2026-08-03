@@ -1,10 +1,13 @@
 /**
- * Discover and execute a custody/bridge deposit, then query its source-chain
- * transaction hash until Gateway sees it.
+ * Deposit lifecycle: discover route -> resolve custody/bridge destination ->
+ * submit on the source chain -> wait for Gateway to index the source tx hash.
+ *
+ * A source-chain receipt is not the final SoDEX credit. Save the hash and
+ * resume with SODEX_DEPOSIT_TX_HASH if indexing outlives this process.
  *
  * Discovery only:
  *   SODEX_USER_ADDRESS=0x... pnpm tsx examples/user-flows/deposit.ts
- * Execute EVM custody transfer:
+ * EVM custody transfer (explicitly enables a real write):
  *   SODEX_PRIVATE_KEY=0x... SODEX_SOURCE_RPC=https://... \
  *   SODEX_SOURCE_CHAIN_ID=8453 SODEX_AMOUNT=5 SODEX_SEND_DEPOSIT=1 \
  *   pnpm tsx examples/user-flows/deposit.ts
@@ -40,6 +43,8 @@ async function main() {
   const chain = process.env.SODEX_CHAIN ?? "BASE_ETH";
   const routeType = parseChoice("SODEX_DEPOSIT_ROUTE", "custody", ["custody", "bridge"]);
   const gateway = new UserClient({ baseUrl: gatewayUrl });
+
+  // Step 1: discover and print the exact token/chain route before any write.
   const { asset, route } = await gateway.getTransferRoute(coin, chain);
   const [spotCoins, perpsCoins] = await Promise.all([
     new SpotClient({ baseUrl: gatewayUrl }).getCoins(),
@@ -75,6 +80,8 @@ async function main() {
   const userAddress = resolveUserAddress();
   let userDepositAddress: UserDepositAddress | undefined;
   let destination: string;
+
+  // Step 2: resolve one explicit custody or bridge destination.
   if (routeType === "custody") {
     if (route.custodyDisabled) {
       throw new Error(`custody deposit is disabled for ${asset.coin}/${route.chain}`);
@@ -113,10 +120,14 @@ async function main() {
     destination,
     userDepositAddress,
   };
+
+  // Step 3: let the selected wallet/adapter submit the source-chain transaction.
   const txHash = process.env.SODEX_DEPOSIT_ADAPTER
     ? await submitWithAdapter(buildInput)
     : await submitBuiltInEvmCustody(buildInput);
   console.log("Source-chain deposit submitted:", txHash);
+
+  // Step 4: wait for Gateway indexing; the source receipt alone is not final credit.
   await printDepositStatus(gateway, route.chain, txHash, true);
 }
 

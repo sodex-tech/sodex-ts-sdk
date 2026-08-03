@@ -1,3 +1,14 @@
+/**
+ * Internal balance lifecycle: choose one direction -> resolve the trading
+ * asset -> sign and submit -> wait before starting a dependent movement.
+ *
+ * EVM -> Perps is implemented as EVM -> Spot, wait for credit, then Spot ->
+ * Perps. Perps -> EVM requires two explicit runs: Perps -> Spot, then Spot ->
+ * EVM after the first transfer settles.
+ *
+ *   SODEX_PRIVATE_KEY=0x... SODEX_TRANSFER=spot-to-perps \
+ *   SODEX_AMOUNT=10 pnpm tsx examples/user-flows/transfer.ts
+ */
 import {
   PerpsClient,
   PerpsSigner,
@@ -7,13 +18,6 @@ import {
   waitForSpotBalanceChange,
 } from "@sodex/sdk";
 import { ClobGateway, ERC20_ABI } from "@sodex/sdk/evm";
-/**
- * Execute one balance movement. Supported SODEX_TRANSFER values:
- * evm-to-spot, evm-to-perps, spot-to-perps, perps-to-spot, spot-to-evm.
- *
- *   SODEX_PRIVATE_KEY=0x... SODEX_TRANSFER=spot-to-perps \
- *   SODEX_AMOUNT=10 pnpm tsx examples/user-flows/transfer.ts
- */
 import { formatUnits, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {

@@ -1,3 +1,13 @@
+/**
+ * Trade lifecycle: query market/account constraints -> establish account WS
+ * subscriptions -> place one signed Spot/Perps order -> correlate the REST
+ * order ID and client order ID with asynchronous order/fill pushes.
+ *
+ * REST acceptance is not proof of a fill.
+ *
+ *   SODEX_PRIVATE_KEY=0x... SODEX_ORDER_PRICE=50000 \
+ *   SODEX_ORDER_QUANTITY=0.001 pnpm tsx examples/user-flows/trade.ts
+ */
 import {
   PerpsClient,
   PerpsSigner,
@@ -6,13 +16,6 @@ import {
   SpotSigner,
   SpotWsClient,
 } from "@sodex/sdk";
-/**
- * Query market/account state, place one Spot or Perps order, print its order
- * ID, and listen for order/fill details over WebSocket.
- *
- *   SODEX_PRIVATE_KEY=0x... SODEX_ORDER_PRICE=50000 SODEX_ORDER_QUANTITY=0.001 \
- *   pnpm tsx examples/user-flows/trade.ts
- */
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { WebSocket } from "ws";
@@ -85,6 +88,8 @@ async function tradeSpot(input: TradeInput) {
     signer: new SpotSigner({ privateKey: input.signingPrivateKey }),
     apiKeyName: input.apiKeyName,
   });
+
+  // Step 1: resolve common market/account constraints before constructing the order.
   await client.refreshMarkets();
   const account = await client.getAccountState(input.userAddress);
   const accountId = configuredAccountId(account.accountId);
@@ -103,6 +108,7 @@ async function tradeSpot(input: TradeInput) {
     balances: account.balances,
   });
 
+  // Step 2: establish the account stream before the REST write.
   const ws = new SpotWsClient({ baseUrl: gatewayUrl, WebSocket });
   await ws.connect();
   let resolveUpdate: () => void = () => {};
@@ -126,6 +132,8 @@ async function tradeSpot(input: TradeInput) {
 
   try {
     await subscription.ready;
+
+    // Step 3: submit and retain both orderID and clOrdID for correlation.
     const receipt = await client.placeOrder({
       accountId,
       symbol: input.symbol,
@@ -138,6 +146,7 @@ async function tradeSpot(input: TradeInput) {
     });
     assertOrderAccepted(receipt);
     console.log("Spot order accepted:", receipt);
+    console.log("Spot order ID:", receipt.orderID?.toString());
     await Promise.race([updateReceived, sleep(waitMs())]);
   } finally {
     await subscription.unsubscribe();
@@ -151,6 +160,8 @@ async function tradePerps(input: TradeInput) {
     signer: new PerpsSigner({ privateKey: input.signingPrivateKey }),
     apiKeyName: input.apiKeyName,
   });
+
+  // Step 1: resolve common market/account constraints before constructing the order.
   await client.refreshMarkets();
   const account = await client.getAccountState(input.userAddress);
   const accountId = configuredAccountId(account.accountId);
@@ -170,6 +181,7 @@ async function tradePerps(input: TradeInput) {
     positions: account.openPositions,
   });
 
+  // Step 2: establish the account stream before the REST write.
   const ws = new PerpsWsClient({ baseUrl: gatewayUrl, WebSocket });
   await ws.connect();
   let resolveUpdate: () => void = () => {};
@@ -193,6 +205,8 @@ async function tradePerps(input: TradeInput) {
 
   try {
     await subscription.ready;
+
+    // Step 3: submit and retain both orderID and clOrdID for correlation.
     const receipt = await client.placeOrder({
       accountId,
       symbol: input.symbol,
@@ -208,6 +222,7 @@ async function tradePerps(input: TradeInput) {
     });
     assertOrderAccepted(receipt);
     console.log("Perps order accepted:", receipt);
+    console.log("Perps order ID:", receipt.orderID?.toString());
     await Promise.race([updateReceived, sleep(waitMs())]);
   } finally {
     await subscription.unsubscribe();

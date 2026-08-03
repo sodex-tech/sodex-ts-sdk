@@ -1,3 +1,14 @@
+/**
+ * Withdrawal lifecycle: discover/validate route -> move Spot/Perps funds to
+ * ValueChain EVM -> sign the WithdrawToken permit -> submit -> wait for an
+ * external terminal status.
+ *
+ * Gateway submission is not final completion. Save the returned hash and
+ * resume with SODEX_WITHDRAW_TX_HASH if settlement outlives this process.
+ *
+ *   SODEX_PRIVATE_KEY=0x... SODEX_WITHDRAW_RECEIVER=0x... \
+ *   SODEX_AMOUNT=10 pnpm tsx examples/user-flows/withdraw.ts
+ */
 import {
   PerpsClient,
   PerpsSigner,
@@ -16,13 +27,6 @@ import {
   getEvmBalance,
   waitForEvmBalanceIncrease,
 } from "@sodex/sdk/evm";
-/**
- * Move funds to ValueChain when needed, sign a WithdrawToken permit, submit
- * the gas-sponsored withdrawal, and poll its external-chain status.
- *
- *   SODEX_PRIVATE_KEY=0x... SODEX_WITHDRAW_RECEIVER=0x... \
- *   SODEX_AMOUNT=10 pnpm tsx examples/user-flows/withdraw.ts
- */
 import { parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
@@ -66,6 +70,7 @@ async function main() {
     throw new Error("SODEX_API_KEY_NAME is required with SODEX_API_KEY_PRIVATE_KEY");
   }
 
+  // Step 1: discover and validate one external withdrawal route.
   const { asset, route } = await gateway.getTransferRoute(coin, chain);
   const valueChainAsset = asset.name;
   const rawAmount = parseUnits(amount, Number(asset.decimals));
@@ -90,6 +95,8 @@ async function main() {
   });
 
   const { account, publicClient } = valueChainClients(masterPrivateKey);
+
+  // Step 2: move engine balances to ValueChain EVM before signing the withdrawal.
   if (source !== "evm") {
     if (!valueChainAsset) {
       throw new Error(
@@ -161,6 +168,7 @@ async function main() {
     );
   }
 
+  // Step 3: build and sign the contract-defined keyed permit.
   const nonceKey = BigInt(process.env.SODEX_WITHDRAW_NONCE_KEY ?? "0");
   const permitNonce = await publicClient.readContract({
     address: CALL_FOR_PERMIT_ADDRESS,
@@ -185,6 +193,8 @@ async function main() {
     args: [WITHDRAW_TOKEN_TARGET, "WithdrawToken", cmdData, permitNonce, deadline],
   });
   const signature = await account.sign({ hash: digest });
+
+  // Step 4: submit the sponsored ValueChain transaction.
   const submission = await gateway.submitEvmWithdraw(account.address, {
     cmdData,
     nonce: permitNonce.toString(),
@@ -192,6 +202,8 @@ async function main() {
     signature,
   });
   console.log("Withdrawal submitted (not final):", submission);
+
+  // Step 5: wait for external settlement, retaining the hash for later resumption.
   try {
     const history = await waitForWithdrawal(
       gateway,

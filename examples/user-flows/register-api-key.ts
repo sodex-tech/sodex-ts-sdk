@@ -1,5 +1,7 @@
 /**
- * Register one unified API-key wallet for both Spot and Perps.
+ * API-key lifecycle: derive the master account -> resolve account ID ->
+ * register a separate signer for both Spot and Perps -> store that key outside
+ * the application process. This example never prints private key material.
  *
  *   SODEX_PRIVATE_KEY=0x... SODEX_API_KEY_PRIVATE_KEY=0x... \
  *   pnpm tsx examples/user-flows/register-api-key.ts
