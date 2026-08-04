@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { WaitAbortedError, WaitTimeoutError, pollUntil } from "../src/common/wait";
+import type { PerpsClient } from "../src/perps/client";
+import { waitForPerpsBalanceChange } from "../src/perps/wait";
 import type { SpotClient } from "../src/spot/client";
 import { waitForSpotBalanceChange } from "../src/spot/wait";
 import type { UserClient } from "../src/user/client";
@@ -109,6 +111,27 @@ describe("workflow wait helpers", () => {
         timeoutMs: 1_000,
       }),
     ).resolves.toBe(expectedCredit);
+  });
+
+  // Validates direct EVM-to-Perps deposits wait until the expected wallet credit is visible.
+  it("waits for the caller's expected Perps balance", async () => {
+    const pending = { blockTime: 1n, blockHeight: 1n, balances: [] };
+    const credited = {
+      blockTime: 2n,
+      blockHeight: 2n,
+      balances: [{ coinId: 0n, coin: "vUSDC", total: "12", marginRatio: "1", price: "1" }],
+    };
+    const client = {
+      getBalances: vi.fn().mockResolvedValueOnce(pending).mockResolvedValueOnce(credited),
+    } as unknown as PerpsClient;
+
+    await expect(
+      waitForPerpsBalanceChange(client, "0xuser", "vUSDC", undefined, {
+        isExpectedBalance: (balance) => balance === "12",
+        intervalMs: 0,
+        timeoutMs: 1_000,
+      }),
+    ).resolves.toBe(credited);
   });
 
   // Validates that an unmet condition exits with a typed timeout instead of looping forever.

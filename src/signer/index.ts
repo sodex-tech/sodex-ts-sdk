@@ -1,6 +1,7 @@
 export {
   EvmSigner,
   SIG_TYPE_EIP712,
+  SIG_TYPE_EIP712_UNIVERSAL,
   SIG_TYPE_ADD_API_KEY,
   WIRE_SIG_LENGTH,
   addressFromPrivateKey,

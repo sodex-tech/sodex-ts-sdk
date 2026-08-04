@@ -1,4 +1,5 @@
 import { keccak_256 } from "@noble/hashes/sha3";
+import { hashActionPayload } from "../common/action-payload";
 import { bytesToHex, concatBytes, hexToBytes, uint256BE, utf8 } from "../common/bytes";
 import {
   type Eip712Domain,
@@ -6,11 +7,17 @@ import {
   UNIVERSAL_DOMAIN_NAME,
   addApiKeyStructHash,
   eip712Digest,
+  exchangeActionStructHash,
   makeDomain,
 } from "../common/eip712";
 import { type NonceManager, globalNonceManager, signerNonceKey } from "../common/nonce";
-import { SIG_TYPE_ADD_API_KEY, addressFromPrivateKey, signDigest } from "../common/signer";
-import type { AddUserApiKeyInput, UserAddress, UserSignedRequest } from "./types";
+import { SIG_TYPE_EIP712_UNIVERSAL, addressFromPrivateKey, signDigest } from "../common/signer";
+import type {
+  AddUserApiKeyInput,
+  RevokeUserApiKeyInput,
+  UserAddress,
+  UserSignedRequest,
+} from "./types";
 
 const KEY_TYPE_EVM = 1;
 
@@ -24,6 +31,7 @@ export interface UserSigner {
   readonly nonceManager?: NonceManager;
   readonly nonceKey?: string;
   signAddApiKey(input: AddUserApiKeyInput, nonce?: bigint): Promise<UserSignedRequest>;
+  signRevokeApiKey(input: RevokeUserApiKeyInput, nonce?: bigint): Promise<UserSignedRequest>;
 }
 
 export interface LocalUserSignerOptions {
@@ -54,11 +62,20 @@ export class LocalUserSigner implements UserSigner {
     return this.sign(addApiKeyStructHashFor(input, resolvedNonce, this.chainId), resolvedNonce);
   }
 
+  async signRevokeApiKey(input: RevokeUserApiKeyInput, nonce?: bigint): Promise<UserSignedRequest> {
+    const resolvedNonce = nonce ?? this.nonceManager.next(this.nonceKey);
+    const payloadHash = hashActionPayload({
+      type: "revokeAPIKey",
+      params: { accountID: input.accountId, name: input.name },
+    });
+    return this.sign(exchangeActionStructHash(payloadHash, resolvedNonce), resolvedNonce);
+  }
+
   private sign(structHash: Uint8Array, nonce: bigint): UserSignedRequest {
     const digest = eip712Digest(universalDomain(this.chainId), structHash);
     return {
       signature: bytesToHex(
-        signDigest(digest, this.privateKey, SIG_TYPE_ADD_API_KEY),
+        signDigest(digest, this.privateKey, SIG_TYPE_EIP712_UNIVERSAL),
       ) as `0x${string}`,
       nonce,
       chainId: this.chainId,

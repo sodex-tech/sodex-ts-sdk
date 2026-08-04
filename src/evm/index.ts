@@ -50,6 +50,7 @@ export async function sendEvmCustodyDeposit(input: EvmCustodyDepositInput): Prom
 export const CALL_FOR_PERMIT_ABI = parseAbi([
   "function nonces(address owner, uint192 key) view returns (uint256)",
   "function hashCallForPermit(address to, string cmdType, bytes cmdData, uint256 nonce, uint256 deadline) view returns (bytes32)",
+  "function execute(address to, string cmdType, bytes cmdData, uint256 nonce, uint256 deadline, bytes signature)",
 ]);
 
 export interface WithdrawCommandInput {
@@ -164,6 +165,8 @@ const CLOB_GATEWAY_ABI = [
     inputs: [
       { name: "token", type: "address" },
       { name: "amount", type: "uint256" },
+      { name: "recipient", type: "address" },
+      { name: "destination", type: "uint256" },
     ],
     outputs: [],
   },
@@ -254,12 +257,18 @@ export class ClobGateway {
     } as any);
   }
 
-  async depositErc20(params: { token: Address; amount: bigint; value?: bigint }): Promise<Hash> {
+  async depositErc20(params: {
+    token: Address;
+    amount: bigint;
+    recipient: Address;
+    destination: Destination;
+    value?: bigint;
+  }): Promise<Hash> {
     return this.wc.writeContract({
       address: this.address,
       abi: CLOB_GATEWAY_ABI,
       functionName: "depositERC20",
-      args: [params.token, params.amount],
+      args: [params.token, params.amount, params.recipient, destinationToCode(params.destination)],
       value: params.value,
       chain: this.wc.chain ?? null,
       account: this.wc.account ?? null,

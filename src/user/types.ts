@@ -96,6 +96,11 @@ export interface AddUserApiKeyInput {
   permissions?: bigint;
 }
 
+export interface RevokeUserApiKeyInput {
+  accountId: bigint;
+  name: string;
+}
+
 export interface UserSignedRequest {
   signature: HexString;
   nonce: bigint;

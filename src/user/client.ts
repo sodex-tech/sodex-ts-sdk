@@ -9,6 +9,7 @@ import type {
   DepositWithdrawalHistory,
   EvmWithdrawRequest,
   EvmWithdrawSubmission,
+  RevokeUserApiKeyInput,
   UserAddress,
   UserDepositAddress,
   UserSignedRequest,
@@ -148,6 +149,34 @@ export class UserClient {
       signer.nonceKey ?? signerNonceKey(signer.chainId, signer.address),
       async (managedNonce) =>
         this.addApiKey(userAddress, input, await signer.signAddApiKey(input, managedNonce)),
+    );
+  }
+
+  revokeApiKey(
+    userAddress: UserAddress,
+    input: RevokeUserApiKeyInput,
+    signed: UserSignedRequest,
+  ): Promise<void> {
+    return this.http.del(`/user/${userAddress}/api-keys`, {
+      body: { accountID: input.accountId, name: input.name },
+      signed: userSignedHeaders(signed),
+    });
+  }
+
+  async revokeApiKeyWithSigner(
+    userAddress: UserAddress,
+    input: RevokeUserApiKeyInput,
+    signer: UserSigner,
+    nonce?: bigint,
+  ): Promise<void> {
+    assertUserSigner(userAddress, signer);
+    if (nonce !== undefined) {
+      return this.revokeApiKey(userAddress, input, await signer.signRevokeApiKey(input, nonce));
+    }
+    return (signer.nonceManager ?? globalNonceManager).run(
+      signer.nonceKey ?? signerNonceKey(signer.chainId, signer.address),
+      async (managedNonce) =>
+        this.revokeApiKey(userAddress, input, await signer.signRevokeApiKey(input, managedNonce)),
     );
   }
 }

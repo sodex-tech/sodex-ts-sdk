@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ZERO_ADDRESS, sendEvmCustodyDeposit } from "../src/evm";
+import { ClobGateway, ZERO_ADDRESS, sendEvmCustodyDeposit } from "../src/evm";
 
 const DEPOSIT_ADDRESS = "0x1111111111111111111111111111111111111111" as const;
 const TOKEN_ADDRESS = "0x2222222222222222222222222222222222222222" as const;
@@ -42,6 +42,29 @@ describe("EVM custody deposit", () => {
     expect(hash).toBe("0xnative");
     expect(sendTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ to: DEPOSIT_ADDRESS, value: 10n }),
+    );
+  });
+});
+
+describe("ValueChain engine deposit", () => {
+  // Validates a direct Perps deposit forwards the recipient and destination=1 to ClobGateway.
+  it("submits the four-argument Perps deposit", async () => {
+    const writeContract = vi.fn().mockResolvedValue("0xperps");
+    const gateway = new ClobGateway({ walletClient: { writeContract } as any });
+
+    const hash = await gateway.depositErc20({
+      token: TOKEN_ADDRESS,
+      amount: 5_000_000n,
+      recipient: DEPOSIT_ADDRESS,
+      destination: "perps",
+    });
+
+    expect(hash).toBe("0xperps");
+    expect(writeContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functionName: "depositERC20",
+        args: [TOKEN_ADDRESS, 5_000_000n, DEPOSIT_ADDRESS, 1n],
+      }),
     );
   });
 });

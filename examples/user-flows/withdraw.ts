@@ -1,9 +1,9 @@
 /**
  * Withdrawal lifecycle: discover/validate route -> move Spot/Perps funds to
- * ValueChain EVM -> sign the WithdrawToken permit -> submit -> wait for an
- * external terminal status.
+ * ValueChain EVM -> sign the WithdrawToken permit -> submit with sponsored or
+ * self-paid gas -> wait for an external terminal status.
  *
- * Gateway submission is not final completion. Save the returned hash and
+ * ValueChain submission is not final completion. Save the returned hash and
  * resume with SODEX_WITHDRAW_TX_HASH if settlement outlives this process.
  *
  *   SODEX_PRIVATE_KEY=0x... SODEX_WITHDRAW_RECEIVER=0x... \
@@ -42,6 +42,7 @@ import {
 
 const SOURCES = ["evm", "spot", "perps"] as const;
 const ROUTES = ["custody", "bridge"] as const;
+const GAS_MODES = ["sponsored", "self-paid"] as const;
 
 async function main() {
   const coin = process.env.SODEX_COIN ?? "USDC";
@@ -63,6 +64,7 @@ async function main() {
   const receiver = requireEnv("SODEX_WITHDRAW_RECEIVER");
   const source = parseChoice("SODEX_WITHDRAW_SOURCE", "evm", SOURCES);
   const withdrawalRoute = parseChoice("SODEX_WITHDRAW_ROUTE", "custody", ROUTES);
+  const gasMode = parseChoice("SODEX_WITHDRAW_GAS_MODE", "sponsored", GAS_MODES);
   const masterPrivateKey = requirePrivateKey();
   const masterAccount = privateKeyToAccount(masterPrivateKey);
   const enginePrivateKey = optionalPrivateKey("SODEX_API_KEY_PRIVATE_KEY") ?? masterPrivateKey;
@@ -95,7 +97,7 @@ async function main() {
     minWithdrawAmount: route.minWithdrawAmount,
   });
 
-  const { account, publicClient } = valueChainClients(masterPrivateKey);
+  const { account, publicClient, walletClient } = valueChainClients(masterPrivateKey);
 
   // Step 2: move engine balances to ValueChain EVM before signing the withdrawal.
   if (source !== "evm") {
@@ -207,21 +209,37 @@ async function main() {
   });
   const signature = await account.sign({ hash: digest });
 
-  // Step 4: submit the sponsored ValueChain transaction.
-  const submission = await gateway.submitEvmWithdraw(account.address, {
-    cmdData,
-    nonce: permitNonce.toString(),
-    deadline: deadline.toString(),
-    signature,
-  });
-  console.log("Withdrawal submitted (not final):", submission);
+  // Step 4: submit through the gas sponsor or directly from the user's wallet.
+  let withdrawTxHash: `0x${string}`;
+  if (gasMode === "sponsored") {
+    const submission = await gateway.submitEvmWithdraw(account.address, {
+      cmdData,
+      nonce: permitNonce.toString(),
+      deadline: deadline.toString(),
+      signature,
+    });
+    withdrawTxHash = submission.txHash;
+    console.log("Withdrawal submitted with sponsored gas (not final):", submission);
+  } else {
+    withdrawTxHash = await walletClient.writeContract({
+      address: CALL_FOR_PERMIT_ADDRESS,
+      abi: CALL_FOR_PERMIT_ABI,
+      functionName: "execute",
+      args: [WITHDRAW_TOKEN_TARGET, "WithdrawToken", cmdData, permitNonce, deadline, signature],
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: withdrawTxHash });
+    if (receipt.status !== "success") {
+      throw new Error(`self-paid ValueChain withdrawal reverted: ${withdrawTxHash}`);
+    }
+    console.log("Withdrawal submitted with self-paid gas (not final):", withdrawTxHash);
+  }
 
   // Step 5: wait for external settlement, retaining the hash for later resumption.
   try {
     const history = await waitForWithdrawal(
       gateway,
       route.chain,
-      { txHash: submission.txHash },
+      { txHash: withdrawTxHash },
       {
         timeoutMs: waitTimeoutMs(),
         intervalMs: 5_000,
@@ -244,7 +262,7 @@ async function main() {
   } catch (error) {
     if (!(error instanceof WaitTimeoutError)) throw error;
     console.log(
-      `Withdrawal is still pending or not indexed. Re-run with SODEX_WITHDRAW_TX_HASH=${submission.txHash}`,
+      `Withdrawal is still pending or not indexed. Re-run with SODEX_WITHDRAW_TX_HASH=${withdrawTxHash}`,
     );
   }
 }

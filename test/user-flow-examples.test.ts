@@ -149,8 +149,8 @@ describe("UserClient user flows", () => {
     );
   });
 
-  // Validates API-key registration sends wallet signature headers without an engine API-key header.
-  it("maps the unified API-key registration write", async () => {
+  // Validates unified API-key registration and revocation use the expected verbs, bodies, and wallet headers.
+  it("maps the unified API-key lifecycle writes", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockImplementation(async () =>
@@ -174,8 +174,9 @@ describe("UserClient user flows", () => {
       },
       signed,
     );
+    await client.revokeApiKey(USER_ADDRESS, { accountId: 1001n, name: "bot" }, signed);
     const requests = fetchMock.mock.calls.map(([, init]) => init);
-    expect(requests.map((request) => request?.method)).toEqual(["POST"]);
+    expect(requests.map((request) => request?.method)).toEqual(["POST", "DELETE"]);
     for (const request of requests) {
       expect(request?.headers).toMatchObject({
         "X-API-Sign": signed.signature,
@@ -190,13 +191,16 @@ describe("UserClient user flows", () => {
       type: 1,
       expiresAt: 0,
     });
+    expect(JSON.parse(String(requests[1]?.body))).toEqual({ accountID: 1001, name: "bot" });
   });
 
   // Validates signer convenience methods create and attach unified signatures without manual header assembly.
   it("signs unified writes through a UserSigner", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(jsonResponse('{"code":0,"timestamp":1780000000000,"data":null}'));
+      .mockImplementation(async () =>
+        jsonResponse('{"code":0,"timestamp":1780000000000,"data":null}'),
+      );
     const client = new UserClient({ baseUrl: "https://gateway.example", fetch: fetchMock });
     const signer = {
       address: USER_ADDRESS,
@@ -204,6 +208,11 @@ describe("UserClient user flows", () => {
       signAddApiKey: vi.fn().mockResolvedValue({
         signature: `0x${"11".repeat(66)}`,
         nonce: 1780000000000n,
+        chainId: 286623n,
+      }),
+      signRevokeApiKey: vi.fn().mockResolvedValue({
+        signature: `0x${"22".repeat(66)}`,
+        nonce: 1780000000001n,
         chainId: 286623n,
       }),
     };
@@ -216,11 +225,19 @@ describe("UserClient user flows", () => {
     };
 
     await client.addApiKeyWithSigner(USER_ADDRESS, input, signer, 1780000000000n);
+    const revokeInput = { accountId: input.accountId, name: input.name };
+    await client.revokeApiKeyWithSigner(USER_ADDRESS, revokeInput, signer, 1780000000001n);
 
     expect(signer.signAddApiKey).toHaveBeenCalledWith(input, 1780000000000n);
+    expect(signer.signRevokeApiKey).toHaveBeenCalledWith(revokeInput, 1780000000001n);
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
       "X-API-Sign": `0x${"11".repeat(66)}`,
       "X-API-Nonce": "1780000000000",
+      "X-API-Chain": "286623",
+    });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({
+      "X-API-Sign": `0x${"22".repeat(66)}`,
+      "X-API-Nonce": "1780000000001",
       "X-API-Chain": "286623",
     });
   });

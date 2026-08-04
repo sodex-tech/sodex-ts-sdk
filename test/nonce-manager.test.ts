@@ -144,6 +144,14 @@ describe("NonceManager", () => {
           chainId: common.chainId,
         };
       },
+      async signRevokeApiKey(_input, nonce) {
+        observedNonces.push(nonce!);
+        return {
+          signature: `0x${"00".repeat(66)}`,
+          nonce: nonce!,
+          chainId: common.chainId,
+        };
+      },
     };
 
     const first = spot.revokeApiKey({ accountId: 1n, name: "bot" });

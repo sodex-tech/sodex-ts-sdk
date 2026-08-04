@@ -10,7 +10,7 @@ WebSockets into the four flows an integrating project normally needs:
 | Deposit | [`deposit.ts`](./deposit.ts) | Discover a route, get/create a custody address or select a bridge, submit an EVM custody transfer, and track the source-chain hash |
 | Transfer | [`transfer.ts`](./transfer.ts) | Move balances between ValueChain EVM, Spot, and Perps |
 | Withdraw | [`withdraw.ts`](./withdraw.ts) | Move funds to EVM when needed, submit a signed withdrawal permit, and wait for an external terminal status |
-| API key | [`register-api-key.ts`](./register-api-key.ts) | Register one key that can sign both Spot and Perps actions |
+| API key | [`register-api-key.ts`](./register-api-key.ts) | Register or revoke one key across both Spot and Perps |
 | Trade | [`trade.ts`](./trade.ts) | Read market/account constraints, place an order, return its order ID, and receive order/fill updates over WebSocket |
 
 The files are executable package-consumer examples, not mocked snippets. They
@@ -36,8 +36,9 @@ of a lifecycle, not proof that the final balance movement or fill has finished.
 
 ### Transfer
 
-1. **ValueChain EVM -> Spot** — approve ERC-20 when required, call
-   `ClobGateway.depositERC20`, then wait for the Spot balance to change.
+1. **ValueChain EVM -> Spot/Perps** — approve ERC-20 when required, call
+   `ClobGateway.depositERC20` with destination `0` or `1`, then wait for the
+   selected engine balance to change.
 2. **Spot <-> Perps** — submit a signed engine transfer using the user's
    account ID and the SDK's named transfer kind.
 3. **Spot -> ValueChain EVM** — submit `EVM_WITHDRAW`; Perps must first move to
@@ -51,8 +52,8 @@ of a lifecycle, not proof that the final balance movement or fill has finished.
    waiting for each dependent balance change.
 3. **Authorize** — read the keyed permit nonce, ABI-encode `WithdrawToken`, and
    sign the contract-provided permit hash.
-4. **Submit** — Gateway sponsors the ValueChain transaction and returns a
-   transaction hash.
+4. **Submit** — use Gateway-sponsored gas or call `CallForPermit.execute`
+   directly from the user's ValueChain wallet and pay gas there.
 5. **Wait for external completion** — poll by transaction hash or withdrawal
    ID until Gateway reports a terminal record. Submission is not completion.
 
@@ -194,8 +195,8 @@ SODEX_TRANSFER=spot-to-evm pnpm tsx examples/user-flows/transfer.ts
 
 Important constraints:
 
-- EVM deposits land in Spot. `evm-to-perps` therefore executes EVM -> Spot,
-  waits for the Spot credit, then submits Spot -> Perps.
+- `evm-to-spot` calls `depositERC20(..., destination=0)`;
+  `evm-to-perps` calls it with `destination=1` and credits Perps directly.
 - The first account deposit must use `vUSDC`; the protocol currently charges a
   1 vUSDC activation fee.
 - ERC-20 deposits require `approve` before `depositERC20`.
@@ -213,9 +214,9 @@ export SODEX_API_KEY_PRIVATE_KEY=0x...
 
 The master key is still required for an EVM-originating transfer.
 
-**Success means:** an engine transfer receipt proves acceptance. A later step
-must wait for the corresponding destination balance; the combined
-`evm-to-perps` path already waits at its dependency boundary.
+**Success means:** an engine transfer receipt proves acceptance. EVM deposits
+wait for the selected Spot or Perps balance; later dependent engine transfers
+must likewise wait for their destination balance.
 
 ### 3. Withdraw from SoDEX
 
@@ -230,10 +231,19 @@ export SODEX_AMOUNT=10
 export SODEX_WITHDRAW_RECEIVER=0x...
 export SODEX_WITHDRAW_SOURCE=evm       # evm | spot | perps
 export SODEX_WITHDRAW_ROUTE=custody    # custody | bridge
+export SODEX_WITHDRAW_GAS_MODE=sponsored # sponsored | self-paid
 pnpm tsx examples/user-flows/withdraw.ts
 ```
 
-The script uses `waitForSpotBalanceChange`, `waitForEvmBalanceIncrease`, and
+To submit the same signed permit directly from the user's wallet without the
+Gateway gas sponsor:
+
+```bash
+SODEX_WITHDRAW_GAS_MODE=self-paid pnpm tsx examples/user-flows/withdraw.ts
+```
+
+The transfer and withdrawal examples use `waitForSpotBalanceChange`,
+`waitForPerpsBalanceChange`, `waitForEvmBalanceIncrease`, and
 `waitForWithdrawal` rather than fixed sleeps. Configure the maximum wait with
 `SODEX_WAIT_SECONDS`.
 
@@ -246,22 +256,29 @@ SODEX_CHAIN=BASE_ETH SODEX_WITHDRAW_TX_HASH=0x... \
 
 `SODEX_WITHDRAW_ID` can be used instead of the transaction hash.
 
-Gateway submission returns a ValueChain transaction hash, but funds are not
+Both submission modes return a ValueChain transaction hash, but funds are not
 final until every returned status record is terminal. Only
 `Success`/`Succeeded` is success; the example exits with an error for `Failed`,
 `Rejected`, or `Cancelled`.
 
-### 4. Register an API key
+### 4. Manage an API key
 
 **User flow:** derive the master account -> resolve its account ID -> register
-a separate signing wallet -> store that private key securely -> use it for
-Spot/Perps actions.
+or revoke a separate signing wallet in both engines with one unified request.
 
 ```bash
 export SODEX_PRIVATE_KEY=0x...              # master wallet
 export SODEX_API_KEY_PRIVATE_KEY=0x...      # separate trading key
 export SODEX_API_KEY_NAME=sdk-example
 pnpm tsx examples/user-flows/register-api-key.ts
+```
+
+Revoke the same key from both Spot and Perps without needing its private key:
+
+```bash
+export SODEX_PRIVATE_KEY=0x...              # master wallet
+export SODEX_API_KEY_NAME=sdk-example
+SODEX_API_KEY_ACTION=revoke pnpm tsx examples/user-flows/register-api-key.ts
 ```
 
 `SODEX_BUILDER_ID` plus `SODEX_BUILDER_FEE_RATE` registers a builder-bound
@@ -271,8 +288,8 @@ mutually exclusive.
 The example uses `LocalUserSigner` and never exposes the master key outside the
 local signing process.
 
-**Success means:** registration completed for both Spot and Perps. The example
-never prints or persists private key material.
+**Success means:** registration or revocation completed for both Spot and
+Perps. The example never prints or persists private key material.
 
 ### 5. Place a Spot or Perps order
 

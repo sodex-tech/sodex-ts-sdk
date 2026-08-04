@@ -2,9 +2,9 @@
  * Internal balance lifecycle: choose one direction -> resolve the trading
  * asset -> sign and submit -> wait before starting a dependent movement.
  *
- * EVM -> Perps is implemented as EVM -> Spot, wait for credit, then Spot ->
- * Perps. Perps -> EVM requires two explicit runs: Perps -> Spot, then Spot ->
- * EVM after the first transfer settles.
+ * EVM deposits select Spot or Perps on the ClobGateway call. Perps -> EVM
+ * requires two explicit runs: Perps -> Spot, then Spot -> EVM after the first
+ * transfer settles.
  *
  *   SODEX_PRIVATE_KEY=0x... SODEX_TRANSFER=spot-to-perps \
  *   SODEX_AMOUNT=10 pnpm tsx examples/user-flows/transfer.ts
@@ -15,6 +15,7 @@ import {
   SpotClient,
   SpotSigner,
   UserClient,
+  waitForPerpsBalanceChange,
   waitForSpotBalanceChange,
 } from "@sodex/sdk";
 import { ClobGateway, ERC20_ABI } from "@sodex/sdk/evm";
@@ -82,10 +83,16 @@ async function main() {
     if (!masterPrivateKey) {
       throw new Error("SODEX_PRIVATE_KEY is required for an EVM-originating transfer");
     }
-    const previousSpotState = await spot.getAccountState(userAddress);
-    const previousSpotBalance = previousSpotState.balances.find(
-      (balance) => balance.coin === valueChainAsset,
-    )?.total;
+    const destination = transfer === "evm-to-spot" ? "spot" : "perps";
+    const [previousSpotState, previousPerpsBalances] = await Promise.all([
+      spot.getAccountState(userAddress),
+      destination === "perps" ? perps.getBalances(userAddress) : undefined,
+    ]);
+    const previousBalance =
+      destination === "spot"
+        ? previousSpotState.balances.find((balance) => balance.coin === valueChainAsset)?.total
+        : previousPerpsBalances?.balances.find((balance) => balance.coin === valueChainAsset)
+            ?.total;
     const creditedAmount = await depositFromEvm({
       masterPrivateKey,
       tokenAddress: asset.tokenAddress,
@@ -93,42 +100,46 @@ async function main() {
       valueChainAsset,
       amount,
       accountActivated: previousSpotState.accountId !== 0n,
+      recipient: userAddress,
+      destination,
     });
-    const previousRawBalance = previousSpotBalance
-      ? parseUnits(previousSpotBalance, Number(asset.decimals))
+    const previousRawBalance = previousBalance
+      ? parseUnits(previousBalance, Number(asset.decimals))
       : 0n;
     const expectedRawBalance =
       previousRawBalance + parseUnits(creditedAmount, Number(asset.decimals));
-    const state = await waitForSpotBalanceChange(
-      spot,
+    const waitOptions = {
+      timeoutMs: Number(process.env.SODEX_WAIT_SECONDS ?? "120") * 1_000,
+      isExpectedBalance(balance: string | undefined) {
+        return (
+          balance !== undefined && parseUnits(balance, Number(asset.decimals)) >= expectedRawBalance
+        );
+      },
+    };
+    if (destination === "spot") {
+      const state = await waitForSpotBalanceChange(
+        spot,
+        userAddress,
+        valueChainAsset,
+        previousBalance,
+        { ...waitOptions, requireActiveAccount: true },
+      );
+      console.log("Deposit credited to Spot:", {
+        accountId: state.accountId,
+        balance: state.balances.find((balance) => balance.coin === valueChainAsset),
+      });
+      return;
+    }
+    const balances = await waitForPerpsBalanceChange(
+      perps,
       userAddress,
       valueChainAsset,
-      previousSpotBalance,
-      {
-        timeoutMs: Number(process.env.SODEX_WAIT_SECONDS ?? "120") * 1_000,
-        requireActiveAccount: true,
-        isExpectedBalance(balance) {
-          return (
-            balance !== undefined &&
-            parseUnits(balance, Number(asset.decimals)) >= expectedRawBalance
-          );
-        },
-      },
+      previousBalance,
+      waitOptions,
     );
-    console.log("Deposit credited to Spot:", {
-      accountId: state.accountId,
-      balance: state.balances.find((balance) => balance.coin === valueChainAsset),
+    console.log("Deposit credited directly to Perps:", {
+      balance: balances.balances.find((balance) => balance.coin === valueChainAsset),
     });
-    if (transfer === "evm-to-spot") return;
-
-    const receipt = await spot.transferAsset({
-      fromAccountId: state.accountId,
-      toAccountId: TREASURY_ACCOUNT_ID,
-      coin: valueChainAsset,
-      amount: creditedAmount,
-      kind: "PERPS_WITHDRAW",
-    });
-    console.log("Spot -> Perps transfer submitted:", receipt);
     return;
   }
 
@@ -199,6 +210,8 @@ async function depositFromEvm(input: {
   valueChainAsset: string;
   amount: string;
   accountActivated: boolean;
+  recipient: `0x${string}`;
+  destination: "spot" | "perps";
 }): Promise<string> {
   const { publicClient, walletClient } = valueChainClients(input.masterPrivateKey);
   const rawAmount = parseUnits(input.amount, input.decimals);
@@ -236,17 +249,19 @@ async function depositFromEvm(input: {
   const depositHash = await clobGateway.depositErc20({
     token: input.tokenAddress,
     amount: rawAmount,
+    recipient: input.recipient,
+    destination: input.destination,
     value: input.tokenAddress.toLowerCase() === ZERO_ADDRESS ? rawAmount : undefined,
   });
   const depositReceipt = await publicClient.waitForTransactionReceipt({ hash: depositHash });
   if (depositReceipt.status !== "success") {
-    throw new Error(`EVM -> Spot deposit reverted: ${depositHash}`);
+    throw new Error(`EVM -> ${input.destination} deposit reverted: ${depositHash}`);
   }
-  console.log("EVM -> Spot deposit confirmed on ValueChain:", depositHash);
+  console.log(`EVM -> ${input.destination} deposit confirmed on ValueChain:`, depositHash);
   console.log(
     input.tokenAddress.toLowerCase() === ZERO_ADDRESS
       ? "Native SOSO is represented as WSOSO after it reaches the trading engines."
-      : `Deposited ${input.valueChainAsset} to Spot.`,
+      : `Deposited ${input.valueChainAsset} to ${input.destination}.`,
   );
   return formatUnits(creditedAmount, input.decimals);
 }

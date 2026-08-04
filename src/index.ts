@@ -20,6 +20,8 @@ export { PerpsClient } from "./perps/client";
 export type { PerpsClientOptions } from "./perps/client";
 export { PerpsSigner } from "./perps/signer";
 export type { PerpsSignerOptions } from "./perps/signer";
+export { waitForPerpsBalanceChange } from "./perps/wait";
+export type { WaitForPerpsBalanceChangeOptions } from "./perps/wait";
 export type {
   FundingPayment,
   MarkPriceTicker,
@@ -85,6 +87,7 @@ export type {
   EvmWithdrawRequest,
   EvmWithdrawSubmission,
   HexString,
+  RevokeUserApiKeyInput,
   UserAddress,
   UserApiKeyType,
   UserDepositAddress,
