@@ -1,7 +1,114 @@
-import type { Address, Hash, WalletClient } from "viem";
+import {
+  type Address,
+  type Hash,
+  type Hex,
+  type PublicClient,
+  type WalletClient,
+  encodeAbiParameters,
+  parseAbi,
+  parseAbiParameters,
+} from "viem";
 
 export const CLOB_GATEWAY_ADDRESS: Address = "0x0101010101010101010101010101010101010101";
 export const ZERO_ADDRESS: Address = "0x0000000000000000000000000000000000000000";
+export const CALL_FOR_PERMIT_ADDRESS: Address = "0x890B7D142841065E64E5f94a455876e6352A7801";
+export const WITHDRAW_TOKEN_TARGET: Address = "0x441BDb33C7d6DC49f627a42c3d71671D50DC2e94";
+
+export const ERC20_ABI = parseAbi([
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function balanceOf(address owner) view returns (uint256)",
+  "function transfer(address to, uint256 amount) returns (bool)",
+]);
+
+export interface EvmCustodyDepositInput {
+  walletClient: WalletClient;
+  depositAddress: Address;
+  tokenAddress: Address;
+  amount: bigint;
+}
+
+/** Submit a direct source-chain native/ERC20 transfer to a custody address. */
+export async function sendEvmCustodyDeposit(input: EvmCustodyDepositInput): Promise<Hash> {
+  if (input.tokenAddress.toLowerCase() === ZERO_ADDRESS) {
+    return input.walletClient.sendTransaction({
+      account: input.walletClient.account ?? null,
+      chain: input.walletClient.chain ?? null,
+      to: input.depositAddress,
+      value: input.amount,
+    } as any);
+  }
+  return input.walletClient.writeContract({
+    address: input.tokenAddress,
+    abi: ERC20_ABI,
+    functionName: "transfer",
+    args: [input.depositAddress, input.amount],
+    account: input.walletClient.account ?? null,
+    chain: input.walletClient.chain ?? null,
+  } as any);
+}
+
+export const CALL_FOR_PERMIT_ABI = parseAbi([
+  "function nonces(address owner, uint192 key) view returns (uint256)",
+  "function hashCallForPermit(address to, string cmdType, bytes cmdData, uint256 nonce, uint256 deadline) view returns (bytes32)",
+  "function execute(address to, string cmdType, bytes cmdData, uint256 nonce, uint256 deadline, bytes signature)",
+]);
+
+export interface WithdrawCommandInput {
+  coin: string;
+  chain: string;
+  receiver: string;
+  amount: bigint;
+  withdrawalType: 0 | 1;
+  memo?: string;
+  failedBackToClob?: boolean;
+}
+
+export function encodeWithdrawCommand(input: WithdrawCommandInput): Hex {
+  return encodeAbiParameters(
+    parseAbiParameters("string, string, string, uint256, uint8, string, bool"),
+    [
+      input.coin,
+      input.chain,
+      input.receiver,
+      input.amount,
+      input.withdrawalType,
+      input.memo ?? "",
+      input.failedBackToClob ?? true,
+    ],
+  );
+}
+
+export async function getEvmBalance(
+  publicClient: PublicClient,
+  userAddress: Address,
+  tokenAddress: Address,
+): Promise<bigint> {
+  if (tokenAddress.toLowerCase() === ZERO_ADDRESS) {
+    return publicClient.getBalance({ address: userAddress });
+  }
+  return publicClient.readContract({
+    address: tokenAddress,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: [userAddress],
+  });
+}
+
+export async function waitForEvmBalanceIncrease(
+  publicClient: PublicClient,
+  userAddress: Address,
+  tokenAddress: Address,
+  previousBalance: bigint,
+  timeoutMs = 120_000,
+): Promise<bigint> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const balance = await getEvmBalance(publicClient, userAddress, tokenAddress);
+    if (balance > previousBalance) return balance;
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  }
+  throw new Error("timed out waiting for the ValueChain balance to increase");
+}
 
 export type Destination = "spot" | "perps";
 export const destinationToCode = (d: Destination): bigint => (d === "spot" ? 0n : 1n);
@@ -58,6 +165,8 @@ const CLOB_GATEWAY_ABI = [
     inputs: [
       { name: "token", type: "address" },
       { name: "amount", type: "uint256" },
+      { name: "recipient", type: "address" },
+      { name: "destination", type: "uint256" },
     ],
     outputs: [],
   },
@@ -148,12 +257,18 @@ export class ClobGateway {
     } as any);
   }
 
-  async depositErc20(params: { token: Address; amount: bigint; value?: bigint }): Promise<Hash> {
+  async depositErc20(params: {
+    token: Address;
+    amount: bigint;
+    recipient: Address;
+    destination: Destination;
+    value?: bigint;
+  }): Promise<Hash> {
     return this.wc.writeContract({
       address: this.address,
       abi: CLOB_GATEWAY_ABI,
       functionName: "depositERC20",
-      args: [params.token, params.amount],
+      args: [params.token, params.amount, params.recipient, destinationToCode(params.destination)],
       value: params.value,
       chain: this.wc.chain ?? null,
       account: this.wc.account ?? null,

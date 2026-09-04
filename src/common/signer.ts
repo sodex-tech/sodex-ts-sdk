@@ -6,7 +6,8 @@ import { type Eip712Domain, eip712Digest, exchangeActionStructHash } from "./eip
 import { InvalidSignatureError } from "./errors";
 
 export const SIG_TYPE_EIP712 = 0x01;
-export const SIG_TYPE_ADD_API_KEY = 0x02;
+export const SIG_TYPE_EIP712_UNIVERSAL = 0x02;
+export const SIG_TYPE_ADD_API_KEY = SIG_TYPE_EIP712_UNIVERSAL;
 export const WIRE_SIG_LENGTH = 66;
 
 export type PrivateKeyInput = Uint8Array | string;

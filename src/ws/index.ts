@@ -26,4 +26,6 @@ export type {
   TickerPushIntervalMs,
   CandlePushIntervalMs,
   BookPushIntervalMs,
+  WsSubscription,
+  WsSubscriptionOptions,
 } from "./types";

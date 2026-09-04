@@ -1,6 +1,7 @@
 export {
   EvmSigner,
   SIG_TYPE_EIP712,
+  SIG_TYPE_EIP712_UNIVERSAL,
   SIG_TYPE_ADD_API_KEY,
   WIRE_SIG_LENGTH,
   addressFromPrivateKey,
@@ -33,5 +34,17 @@ export {
 } from "../common/eip712";
 export { hashActionPayload, payloadBody, type ActionPayload } from "../common/action-payload";
 export { canonicalStringify } from "../common/canonical-json";
+export {
+  createMonotonicNonce,
+  createNonceManager,
+  globalNonceManager,
+  nowMillis,
+  signerNonceKey,
+  type NonceManager,
+  type NonceManagerOptions,
+  type NonceProvider,
+} from "../common/nonce";
 export { SpotSigner } from "../spot/signer";
 export { PerpsSigner } from "../perps/signer";
+export { LocalUserSigner } from "../user/signer";
+export type { BuilderFeeSigner, LocalUserSignerOptions, UserSigner } from "../user/signer";

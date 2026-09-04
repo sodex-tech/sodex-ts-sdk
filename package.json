@@ -34,24 +34,32 @@
       "import": "./dist/evm.mjs",
       "require": "./dist/evm.cjs"
     },
+    "./user": {
+      "types": "./dist/user.d.ts",
+      "import": "./dist/user.mjs",
+      "require": "./dist/user.cjs"
+    },
     "./ws": {
       "types": "./dist/ws.d.ts",
       "import": "./dist/ws.mjs",
       "require": "./dist/ws.cjs"
     }
   },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": ["dist", "examples", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "typecheck:examples": "pnpm build && tsc -p examples/user-flows/tsconfig.json",
+    "test:consumer": "node scripts/test-package-consumer.mjs",
     "lint": "biome check src test",
+    "lint:examples": "biome check examples/user-flows test/user-flow-examples.test.ts",
     "lint:fix": "biome check --write src test",
     "format": "biome format --write src test",
     "prepare": "tsup",
-    "prepublishOnly": "pnpm test"
+    "prepublishOnly": "pnpm test && pnpm build && pnpm test:consumer"
   },
   "dependencies": {
     "@noble/curves": "^1.6.0",

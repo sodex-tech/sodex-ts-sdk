@@ -12,7 +12,7 @@
  *   SODEX_GATEWAY=wss://my-gw.example.com pnpm tsx examples/ws-coin-price.ts
  */
 import { WebSocket } from "ws";
-import { PerpsWsClient } from "../src";
+import { PerpsWsClient } from "@sodex/sdk";
 
 const baseUrl = process.env.SODEX_GATEWAY ?? "wss://mainnet-gw.sodex.dev";
 

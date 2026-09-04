@@ -13,7 +13,7 @@
  *      safe to share across processes without external coordination.
  *   3. clOrdId is timestamped to avoid collisions on repeat runs.
  */
-import { SpotClient, SpotSigner } from "../src";
+import { SpotClient, SpotSigner } from "@sodex/sdk";
 
 async function main() {
   const pk = requireEnv("SODEX_PRIVATE_KEY");
