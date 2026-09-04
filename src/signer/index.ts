@@ -47,4 +47,4 @@ export {
 export { SpotSigner } from "../spot/signer";
 export { PerpsSigner } from "../perps/signer";
 export { LocalUserSigner } from "../user/signer";
-export type { LocalUserSignerOptions, UserSigner } from "../user/signer";
+export type { BuilderFeeSigner, LocalUserSignerOptions, UserSigner } from "../user/signer";

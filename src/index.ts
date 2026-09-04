@@ -73,12 +73,14 @@ export type {
   DepositSubmission,
 } from "./user/deposit";
 export type {
+  BuilderFeeSigner,
   LocalUserSignerOptions,
   UserSigner,
 } from "./user/signer";
 export type {
   AddUserApiKeyInput,
   ApiKeyBuilderInput,
+  ApproveBuilderFeeInput,
   ChainTransferConfig,
   CoinTransferConfig,
   CreateDepositAddressInput,

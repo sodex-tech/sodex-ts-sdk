@@ -101,6 +101,12 @@ export interface RevokeUserApiKeyInput {
   name: string;
 }
 
+export interface ApproveBuilderFeeInput {
+  accountId: bigint;
+  builderId: bigint;
+  maxFeeRate: bigint;
+}
+
 export interface UserSignedRequest {
   signature: HexString;
   nonce: bigint;

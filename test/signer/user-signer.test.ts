@@ -1,7 +1,8 @@
+import { keccak_256 } from "@noble/hashes/sha3";
 import { describe, expect, it } from "vitest";
 import { type AddUserApiKeyInput, LocalUserSigner } from "../../src";
 import { hashActionPayload } from "../../src/common/action-payload";
-import { hexToBytes } from "../../src/common/bytes";
+import { concatBytes, hexToBytes, uint256BE, utf8 } from "../../src/common/bytes";
 import {
   UNIVERSAL_DOMAIN_NAME,
   eip712Digest,
@@ -60,6 +61,57 @@ describe("unified user signer", () => {
     expect(signed.signature).toMatch(/^0x02[0-9a-f]{130}$/);
     expect(recoverAddress(digest, hexToBytes(signed.signature))).toBe(
       addressFromPrivateKey(PRIVATE_KEY),
+    );
+  });
+
+  // Validates builder approval signs the dedicated action fields in Gateway's exact universal EIP-712 order.
+  it("signs builder fee approval for both engines", async () => {
+    const signer = new LocalUserSigner({ privateKey: PRIVATE_KEY, chainId: CHAIN_ID });
+    const input = { accountId: ACCOUNT_ID, builderId: 202n, maxFeeRate: 10n };
+    const signed = await signer.signApproveBuilderFee(input, NONCE);
+    const structHash = keccak_256(
+      concatBytes(
+        keccak_256(
+          utf8(
+            "ApproveBuilderFeeAction(uint64 chainID,uint64 nonce,uint64 accountID,uint64 builderID,uint64 maxFeeRate)",
+          ),
+        ),
+        uint256BE(CHAIN_ID),
+        uint256BE(NONCE),
+        uint256BE(input.accountId),
+        uint256BE(input.builderId),
+        uint256BE(input.maxFeeRate),
+      ),
+    );
+    const digest = eip712Digest(makeDomain(UNIVERSAL_DOMAIN_NAME, CHAIN_ID), structHash);
+
+    expect(signed.signature).toMatch(/^0x02[0-9a-f]{130}$/);
+    expect(recoverAddress(digest, hexToBytes(signed.signature))).toBe(
+      addressFromPrivateKey(PRIVATE_KEY),
+    );
+  });
+
+  // Validates every dedicated builder approval integer rejects negative and overflowing uint64 values before signing.
+  it.each([
+    [
+      "chainId",
+      { chainId: -1n },
+      { accountId: ACCOUNT_ID, builderId: 202n, maxFeeRate: 10n },
+      NONCE,
+    ],
+    ["nonce", {}, { accountId: ACCOUNT_ID, builderId: 202n, maxFeeRate: 10n }, -1n],
+    ["accountId", {}, { accountId: -1n, builderId: 202n, maxFeeRate: 10n }, NONCE],
+    ["builderId", {}, { accountId: ACCOUNT_ID, builderId: 1n << 64n, maxFeeRate: 10n }, NONCE],
+    ["maxFeeRate", {}, { accountId: ACCOUNT_ID, builderId: 202n, maxFeeRate: -1n }, NONCE],
+  ])("rejects an invalid %s", async (field, signerOverrides, input, nonce) => {
+    const signer = new LocalUserSigner({
+      privateKey: PRIVATE_KEY,
+      chainId: CHAIN_ID,
+      ...signerOverrides,
+    });
+
+    await expect(signer.signApproveBuilderFee(input, nonce)).rejects.toThrow(
+      `${field} must be a uint64`,
     );
   });
 

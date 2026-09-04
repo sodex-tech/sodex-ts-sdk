@@ -17,8 +17,10 @@ try {
   const filename = packed[0]?.filename;
   if (!filename) throw new Error("npm pack did not return a tarball filename");
   const files = new Set(packed[0].files.map((entry) => entry.path));
-  if (!files.has("examples/user-flows/deposit.ts")) {
-    throw new Error("published package is missing user-flow examples");
+  for (const requiredExample of ["deposit.ts", "approve-builder-fee.ts"]) {
+    if (!files.has(`examples/user-flows/${requiredExample}`)) {
+      throw new Error(`published package is missing user-flow example ${requiredExample}`);
+    }
   }
 
   writeFileSync(

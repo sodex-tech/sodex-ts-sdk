@@ -1,8 +1,9 @@
 import { HttpClient, type RetryOptions, type SignedHeaders } from "../common/http";
 import { globalNonceManager, signerNonceKey } from "../common/nonce";
-import type { UserSigner } from "./signer";
+import type { BuilderFeeSigner, UserSigner } from "./signer";
 import type {
   AddUserApiKeyInput,
+  ApproveBuilderFeeInput,
   ChainTransferConfig,
   CoinTransferConfig,
   CreateDepositAddressInput,
@@ -177,6 +178,46 @@ export class UserClient {
       signer.nonceKey ?? signerNonceKey(signer.chainId, signer.address),
       async (managedNonce) =>
         this.revokeApiKey(userAddress, input, await signer.signRevokeApiKey(input, managedNonce)),
+    );
+  }
+
+  approveBuilderFee(
+    userAddress: UserAddress,
+    input: ApproveBuilderFeeInput,
+    signed: UserSignedRequest,
+  ): Promise<void> {
+    return this.http.post(`/user/${userAddress}/builders`, {
+      body: {
+        accountID: input.accountId,
+        builderID: input.builderId,
+        maxFeeRate: input.maxFeeRate,
+      },
+      signed: userSignedHeaders(signed),
+    });
+  }
+
+  async approveBuilderFeeWithSigner(
+    userAddress: UserAddress,
+    input: ApproveBuilderFeeInput,
+    signer: BuilderFeeSigner,
+    nonce?: bigint,
+  ): Promise<void> {
+    assertUserSigner(userAddress, signer);
+    if (nonce !== undefined) {
+      return this.approveBuilderFee(
+        userAddress,
+        input,
+        await signer.signApproveBuilderFee(input, nonce),
+      );
+    }
+    return (signer.nonceManager ?? globalNonceManager).run(
+      signer.nonceKey ?? signerNonceKey(signer.chainId, signer.address),
+      async (managedNonce) =>
+        this.approveBuilderFee(
+          userAddress,
+          input,
+          await signer.signApproveBuilderFee(input, managedNonce),
+        ),
     );
   }
 }

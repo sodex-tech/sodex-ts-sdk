@@ -215,6 +215,11 @@ describe("UserClient user flows", () => {
         nonce: 1780000000001n,
         chainId: 286623n,
       }),
+      signApproveBuilderFee: vi.fn().mockResolvedValue({
+        signature: `0x${"33".repeat(66)}`,
+        nonce: 1780000000002n,
+        chainId: 286623n,
+      }),
     };
     const input = {
       accountId: 1001n,
@@ -240,6 +245,42 @@ describe("UserClient user flows", () => {
       "X-API-Nonce": "1780000000001",
       "X-API-Chain": "286623",
     });
+  });
+
+  // Validates builder fee approval posts the aggregate Spot/Perps body with the master-wallet signature headers.
+  it("maps the builder fee approval user flow", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse('{"code":0,"timestamp":1780000000000,"data":null}'));
+    const client = new UserClient({ baseUrl: "https://gateway.example", fetch: fetchMock });
+    const signer = {
+      address: USER_ADDRESS,
+      chainId: 286623n,
+      signAddApiKey: vi.fn(),
+      signRevokeApiKey: vi.fn(),
+      signApproveBuilderFee: vi.fn().mockResolvedValue({
+        signature: `0x${"33".repeat(66)}`,
+        nonce: 1780000000002n,
+        chainId: 286623n,
+      }),
+    };
+    const input = { accountId: 1001n, builderId: 9n, maxFeeRate: 20n };
+
+    await client.approveBuilderFeeWithSigner(USER_ADDRESS, input, signer, 1780000000002n);
+
+    expect(signer.signApproveBuilderFee).toHaveBeenCalledWith(input, 1780000000002n);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://gateway.example/api/v1/user/${USER_ADDRESS}/builders`,
+      expect.objectContaining({
+        method: "POST",
+        body: '{"accountID":1001,"builderID":9,"maxFeeRate":20}',
+        headers: expect.objectContaining({
+          "X-API-Sign": `0x${"33".repeat(66)}`,
+          "X-API-Nonce": "1780000000002",
+          "X-API-Chain": "286623",
+        }),
+      }),
+    );
   });
 });
 

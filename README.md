@@ -119,7 +119,7 @@ updateLeverage, updateMargin, transferAsset, addApiKey, revokeApiKey.
 Gateway user flows: wallet registration status, transfer configuration and
 route discovery, custody deposit-address query/single/partner creation,
 deposit and withdrawal status, sponsored EVM withdrawal submission, and
-unified API-key registration through `UserClient`.
+unified API-key registration and builder fee approval through `UserClient`.
 
 Gateway: `getServerTime(baseUrl)` — standalone function (the endpoint lives
 at the gateway root `/api/v1/time`, outside both clients' path prefixes);

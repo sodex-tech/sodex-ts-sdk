@@ -87,6 +87,13 @@ describeStaging("staging user flows", () => {
     () => runExample("trade.ts"),
     600_000,
   );
+
+  // Executes a real aggregate builder fee approval only after explicit real-write authorization.
+  it.runIf(writeFlowEnabled("builder-fee"))(
+    "approves a real builder fee",
+    () => runExample("approve-builder-fee.ts"),
+    600_000,
+  );
 });
 
 function writeFlowEnabled(flow: string): boolean {

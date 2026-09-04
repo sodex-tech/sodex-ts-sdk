@@ -3,7 +3,7 @@
 ## Overview
 
 These examples connect Gateway, ValueChain, the Spot/Perps engines, and account
-WebSockets into the four flows an integrating project normally needs:
+WebSockets into the six flows an integrating project normally needs:
 
 | Flow | Runnable example | What it proves |
 | --- | --- | --- |
@@ -11,6 +11,7 @@ WebSockets into the four flows an integrating project normally needs:
 | Transfer | [`transfer.ts`](./transfer.ts) | Move balances between ValueChain EVM, Spot, and Perps |
 | Withdraw | [`withdraw.ts`](./withdraw.ts) | Move funds to EVM when needed, submit a signed withdrawal permit, and wait for an external terminal status |
 | API key | [`register-api-key.ts`](./register-api-key.ts) | Register or revoke one key across both Spot and Perps |
+| Builder fee | [`approve-builder-fee.ts`](./approve-builder-fee.ts) | Approve a builder's maximum fee rate across both Spot and Perps |
 | Trade | [`trade.ts`](./trade.ts) | Read market/account constraints, place an order, return its order ID, and receive order/fill updates over WebSocket |
 
 The files are executable package-consumer examples, not mocked snippets. They
@@ -57,6 +58,13 @@ of a lifecycle, not proof that the final balance movement or fill has finished.
 5. **Wait for external completion** — poll by transaction hash or withdrawal
    ID until Gateway reports a terminal record. Submission is not completion.
 
+### Builder fee
+
+1. **Authenticate** — load the master wallet and resolve its primary account.
+2. **Authorize** — sign the builder ID and maximum fee rate with the dedicated
+   universal EIP-712 action.
+3. **Submit once** — Gateway applies the approval to both Spot and Perps.
+
 ### Trade
 
 1. **Resolve common state** — load coin/symbol metadata, user/account IDs,
@@ -73,6 +81,7 @@ of a lifecycle, not proof that the final balance movement or fill has finished.
 - Deposit: discover route -> send on source chain -> wait for Gateway indexing.
 - Transfer: submit one balance movement -> wait before starting a dependent step.
 - Withdraw: move to EVM -> sign and submit -> wait for external settlement.
+- Builder fee: resolve primary account -> sign approval -> apply to both engines.
 - Trade: subscribe -> sign and place -> correlate order ID with WS updates/fills.
 
 ## Shared setup
@@ -291,7 +300,25 @@ local signing process.
 **Success means:** registration or revocation completed for both Spot and
 Perps. The example never prints or persists private key material.
 
-### 5. Place a Spot or Perps order
+### 5. Approve a builder fee
+
+**User flow:** authenticate with the master wallet -> resolve the primary
+account -> approve a builder's maximum fee rate on Spot and Perps.
+
+```bash
+export SODEX_PRIVATE_KEY=0x...
+export SODEX_BUILDER_ID=9
+export SODEX_BUILDER_FEE_RATE=20
+pnpm tsx examples/user-flows/approve-builder-fee.ts
+```
+
+The builder must be valid on both engines. The example signs the dedicated
+`ApproveBuilderFeeAction` with the universal EIP-712 domain and sends one
+aggregate Gateway request.
+
+**Success means:** both Spot and Perps accepted the maximum builder fee rate.
+
+### 6. Place a Spot or Perps order
 
 **User flow:** query common state -> subscribe to account events -> place one
 signed order -> save `orderID` -> receive order/fill details.
@@ -339,6 +366,7 @@ the execution source of truth.
 | Spot/Perps -> EVM before withdrawal | Withdrawal example |
 | Submit and resume withdrawal tracking | Withdrawal example and `waitForWithdrawal` |
 | EVM -> Spot/Perps and Spot <-> Perps | Transfer example |
+| Builder fee approval on Spot and Perps | Builder fee example |
 | Master wallet or API key trading | API-key and trade examples |
 | Order ID plus WS order/fill details | Trade example |
 
@@ -352,5 +380,6 @@ do not invent timing or contract behavior that Gateway does not expose.
 The default test suite never moves funds. Real staging reads require
 `SODEX_STAGING_E2E=1`. Writes additionally require
 `SODEX_STAGING_ALLOW_WRITES=I_UNDERSTAND` and an explicit comma-separated
-`SODEX_STAGING_FLOWS` list such as `deposit,transfer`. Every selected flow must
-still provide its normal key, amount, route, and receiver variables.
+`SODEX_STAGING_FLOWS` list such as `deposit,transfer,builder-fee`. Every selected
+flow must still provide its normal key, amount, route, builder, and receiver
+variables.
